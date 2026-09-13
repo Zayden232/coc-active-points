@@ -193,18 +193,21 @@ try {
   const readUtil = (p) => fs.readFileSync(path.resolve('app/src/utils', p), 'utf8');
   const wrap = (code) => JSON.stringify(durl(code));
 
-  // 风格库用**真实源码**: 数据在 handraw-styles.js, 逻辑在 handraw-prompt.js。
+  // 风格库用**真实源码**: 数据在 handraw-styles.js + handraw-prompts.js, 逻辑在 handraw-prompt.js。
   // 复制成 .mjs 是为了避开 app/package.json 没写 type:module 的告警。
   fs.copyFileSync(
     path.resolve('app/src/utils/handraw-styles.js'),
     path.join(tmpDir, 'handraw-styles.mjs')
   );
+  fs.copyFileSync(
+    path.resolve('app/src/utils/handraw-prompts.js'),
+    path.join(tmpDir, 'handraw-prompts.mjs')
+  );
   fs.writeFileSync(
     path.join(tmpDir, 'handraw-prompt.mjs'),
-    readUtil('handraw-prompt.js').replace(
-      "'./handraw-styles.js'",
-      "'./handraw-styles.mjs'"
-    ),
+    readUtil('handraw-prompt.js')
+      .replace("'./handraw-styles.js'", "'./handraw-styles.mjs'")
+      .replace("'./handraw-prompts.js'", "'./handraw-prompts.mjs'"),
     'utf8'
   );
   const handrawUrl = pathToFileURL(path.join(tmpDir, 'handraw-prompt.mjs')).href;
@@ -330,6 +333,69 @@ try {
     );
   }
 
+  section('1b. 备好提示词(261 条规则拼装)');
+  {
+    const slot = handraw.HANDRAW_PROMPT_SLOT;
+    const prompts = handraw.HANDRAW_PROMPTS;
+    checkEq('提示词条数', handraw.HANDRAW_PROMPT_COUNT, 261);
+    checkEq('提示词键数', Object.keys(prompts).length, 261);
+    checkEq('占位符', slot, '[这里写主体]');
+
+    const keys = Object.keys(prompts);
+    let allNumbers = true;
+    for (let i = 1; i <= 261; i += 1) {
+      if (!keys.includes(String(i).padStart(3, '0'))) allNumbers = false;
+    }
+    check(allNumbers, '001–261 每条都有备好提示词');
+
+    const texts = Object.values(prompts);
+    check(
+      texts.every((t) => t.startsWith(slot)),
+      '每条都以 [这里写主体] 占位开头(用户先改这一句)'
+    );
+    const lengths = texts.map((t) => t.length);
+    check(
+      Math.max(...lengths) <= 500,
+      `最长 ${Math.max(...lengths)} 字(远低于描述框 1000 字上限)`
+    );
+    check(Math.min(...lengths) >= 90, `最短 ${Math.min(...lengths)} 字(不是空架子)`);
+    checkEq('没有重复的提示词', new Set(texts).size, 261);
+    check(
+      handraw.HANDRAW_STYLES.every((s) => prompts[s.number].includes(s.name)),
+      '每条提示词都带上了自己的风格名'
+    );
+    check(
+      handraw.HANDRAW_STYLES.every((s) => prompts[s.number].includes(s.reference)),
+      '每条提示词都带上了参考作者'
+    );
+    check(
+      handraw.HANDRAW_STYLES.every(
+        (s) => !s.traits || prompts[s.number].includes(s.traits.replace(/[。.；;,，、]+$/, ''))
+      ),
+      '有核心特征的条目把特征整段写进去了'
+    );
+    check(
+      prompts['001'].includes('画面中不出现任何文字'),
+      '结尾统一带"不出现文字"这类要求'
+    );
+    check(
+      prompts['201'].includes(handraw.HANDRAW_TRAITS_FALLBACK),
+      '没有核心特征的 201 用兜底句(与 handraw-prompt.js 的兜底句一致)'
+    );
+    check(!texts.some((t) => t.includes('undefined')), '没有 undefined 混进文案');
+
+    const s001 = handraw.findStyle('001');
+    checkEq('styleFillText 用备好的那条', handraw.styleFillText(s001), prompts['001']);
+    checkEq('hasStylePrompt("001")', handraw.hasStylePrompt('001'), true);
+    check(
+      handraw.styleFillText({ number: '999', name: 'X', reference: 'Y', traits: 'Z' }).includes(
+        '手绘风格「X」'
+      ),
+      '没有备好提示词时退回短句(不会填入空内容)'
+    );
+    checkEq('hasStylePrompt("999")', handraw.hasStylePrompt('999'), false);
+  }
+
   section('2. 纯函数: 过滤 / 查找 / 文案');
   {
     checkEq('按分类 G', handraw.filterStyles({ group: 'G' }).length, 61);
@@ -453,16 +519,19 @@ try {
     await nextTick();
   }
 
-  section('4. 填入提示词(追加, 不覆盖用户写的主体)');
+  section('4. 填入提示词(填备好的完整提示词; 已有内容要先确认替换)');
   {
     inst.prompt = '';
     inst.promptSource = '';
     inst.styleLibraryOpen = true;
+    inst.clearStyleState();
     const style = handraw.findStyle('001');
 
-    inst.useStylePrompt(style);
+    await inst.useStylePrompt(style);
     await nextTick();
-    check(inst.prompt.includes('Playful Deadpan Doodle'), '空提示词时直接填入画风');
+    checkEq('空描述框: 直接填入备好的提示词', inst.prompt, handraw.HANDRAW_PROMPTS['001']);
+    check(inst.prompt.startsWith('[这里写主体]'), '填入的内容开头就是主体占位');
+    check(inst.prompt.includes('Playful Deadpan Doodle'), '带风格名');
     checkEq('填入后标记为 manual(东方幻境不会再拦)', inst.promptSource, 'manual');
     checkEq('填入后自动关掉弹层', inst.styleLibraryOpen, false);
     check(
@@ -471,37 +540,60 @@ try {
     );
     const filled = inst.prompt;
 
-    // 已经有主体描述: 追加而不是覆盖
+    // 描述框里已有内容: 第一次点只提醒, 点击不变更内容
     inst.prompt = '一只守护部落的小龙，穿金色铠甲';
-    inst.useStylePrompt(handraw.findStyle('041'));
+    inst.styleLibraryOpen = true;
+    await inst.useStylePrompt(handraw.findStyle('041'));
     await nextTick();
-    check(inst.prompt.startsWith('一只守护部落的小龙'), '原有主体描述还在最前面');
-    check(inst.prompt.includes(handraw.findStyle('041').name), '新画风追加在后面(画风可叠加)');
-    check(inst.prompt.includes('，手绘风格'), '追加时用中文逗号连接');
-
-    // 已经有一份画风时再叠一个: 两个风格都在, 先选的那个不被删掉
-    inst.prompt = filled;
-    inst.useStylePrompt(handraw.findStyle('041'));
-    await nextTick();
+    checkEq('已有内容时第一次点不覆盖', inst.prompt, '一只守护部落的小龙，穿金色铠甲');
+    checkEq('记下"待确认替换的是哪一条"', inst.stylePendingReplace, '041');
+    checkEq('提醒的语气是 warn', inst.styleNoticeKind, 'warn');
     check(
-      inst.prompt.includes('Playful Deadpan Doodle') && inst.prompt.includes(handraw.findStyle('041').name),
-      '两种画风可以叠在一起, 先选的没被覆盖'
+      inst.styleNotice.includes('确认替换') && inst.styleNotice.includes('041'),
+      `提醒里说清了再点一次会替换:「${inst.styleNotice}」`
     );
 
-    // 同一个画风重复点: 不重复堆叠
-    const once = inst.prompt;
-    inst.prompt = once;
-    inst.useStylePrompt(handraw.findStyle('041'));
+    // 再点一次(同一条)才真的替换
+    await inst.useStylePrompt(handraw.findStyle('041'));
     await nextTick();
-    checkEq(
-      '同一个画风再点一次不会重复堆叠',
-      inst.prompt.split(handraw.findStyle('041').name).length - 1,
-      1
+    checkEq('再点一次才替换成备好提示词', inst.prompt, handraw.HANDRAW_PROMPTS['041']);
+    check(
+      !inst.prompt.includes('穿金色铠甲'),
+      '替换是整体替换(旧的主体描述不再残留)'
     );
+    checkEq('替换后清掉待确认状态', inst.stylePendingReplace, '');
+    checkEq('替换后弹层也关掉', inst.styleLibraryOpen, false);
+
+    // 待确认时改点另一条: 提醒跟着换到新的那条
+    inst.prompt = '随便写点东西';
+    inst.styleLibraryOpen = true;
+    await inst.useStylePrompt(handraw.findStyle('010'));
+    await nextTick();
+    await inst.useStylePrompt(handraw.findStyle('012'));
+    await nextTick();
+    checkEq('改点另一条时待确认跟着换', inst.stylePendingReplace, '012');
+    check(
+      inst.styleNotice.includes('012'),
+      `提醒里的编号也跟着换:「${inst.styleNotice}」`
+    );
+
+    // 关弹层/换分类/换关键词都会把待确认清掉
+    inst.closeStyleLibrary();
+    checkEq('关弹层清掉待确认', inst.stylePendingReplace, '');
+    checkEq('关弹层清掉提醒', inst.styleNotice, '');
+
+    // 内容已经是同一条提示词时不算替换, 不再啰嗦
+    inst.prompt = handraw.HANDRAW_PROMPTS['001'];
+    inst.styleLibraryOpen = true;
+    await inst.useStylePrompt(handraw.findStyle('001'));
+    await nextTick();
+    checkEq('重复填同一条不会弹提醒', inst.stylePendingReplace, '');
+    checkEq('也不改变内容', inst.prompt, handraw.HANDRAW_PROMPTS['001']);
 
     // 超长保护: textarea maxlength=1000
     inst.prompt = '龙'.repeat(995);
-    inst.useStylePrompt(handraw.findStyle('001'));
+    inst.stylePendingReplace = '001';
+    await inst.useStylePrompt(handraw.findStyle('001'));
     await nextTick();
     check(inst.prompt.length <= 1000, `填入后不超过 1000 字(实际 ${inst.prompt.length})`);
 
@@ -513,7 +605,7 @@ try {
     checkEq('生成中打不开弹层', inst.styleLibraryOpen, false);
     inst.busy = false;
 
-    check(filled.length > 20, '填入的短语不是空串');
+    check(filled.length > 100, '填入的是完整提示词(不是原来那句短描述)');
   }
 
   section('5. 复制画风到其它 AI（弹层里必须看得见反馈）');
@@ -531,25 +623,34 @@ try {
     check(text.includes(handraw.HANDRAW_THEME_PLACEHOLDER), '主题那行是占位提示');
     checkEq('记下"刚复制的是哪一条"(按钮要变「已复制 ✓」)', inst.styleCopied, '010');
     check(
-      inst.styleCopiedText.includes('已复制到剪贴板') && inst.styleCopiedText.includes('010'),
-      `弹层里有可见的复制提示:「${inst.styleCopiedText}」`
+      inst.styleNotice.includes('已复制到剪贴板') && inst.styleNotice.includes('010'),
+      `弹层里有可见的复制提示:「${inst.styleNotice}」`
     );
-    inst.clearCopyFeedback();
-    checkEq('提示可以清掉', inst.styleCopiedText, '');
+    checkEq('复制提示是 ok 语气', inst.styleNoticeKind, 'ok');
+    inst.clearStyleNotice();
+    checkEq('提示可以清掉', inst.styleNotice, '');
+    checkEq('清掉提示后按钮状态也复位', inst.styleCopied, '');
 
     // 换一条复制: 反馈跟着换过去
     inst.copyStylePrompt(handraw.findStyle('011'));
     checkEq('反馈换成新的编号', inst.styleCopied, '011');
-    check(!inst.styleCopiedText.includes('010'), '上一条的提示不残留');
+    check(!inst.styleNotice.includes('010'), '上一条的提示不残留');
 
     // 没有剪贴板能力时也要给出可操作提示, 而不是静默失败
     const keep = globalThis.uni.setClipboardData;
     delete globalThis.uni.setClipboardData;
-    inst.clearCopyFeedback();
+    inst.clearStyleNotice();
     inst.copyStylePrompt(style);
-    check(inst.styleCopiedText.includes('长按'), '剪贴板不可用时提示手动复制');
+    check(inst.styleNotice.includes('长按'), '剪贴板不可用时提示手动复制');
+    checkEq('这条是 warn 语气', inst.styleNoticeKind, 'warn');
     globalThis.uni.setClipboardData = keep;
-    inst.clearCopyFeedback();
+    inst.clearStyleState();
+
+    // 复制的是 skill 原生文案, 与「填入」的备好提示词是两码事
+    check(
+      text !== handraw.HANDRAW_PROMPTS['010'] && text.startsWith('【手绘风格 010'),
+      '复制内容仍然是 skill 原生文案(不是备好的那条提示词)'
+    );
   }
 
   section('6. 参考图（缩略图 + 点开大图）');
@@ -679,7 +780,7 @@ try {
       /styleKeyword\(\)\s*\{\s*this\.styleLimit = 30;\s*\}/.test(src),
       '改用 watch(styleKeyword) 重置分页'
     );
-    check(/v-if="styleCopiedText"/.test(src), '复制反馈在弹层里可见');
+    check(/v-if="styleNotice"/.test(src), '复制/替换反馈在弹层里可见');
     check(/:class="\{ copied: styleCopied === item\.number \}"/.test(src), '复制的按钮会变成「已复制」');
     check(/:src="styleThumb\(item\.number\)"/.test(src), '列表里挂了参考图');
     check(/@click="previewStyle\(item\)"/.test(src), '点参考图可放大');
@@ -696,6 +797,13 @@ try {
     check(/getClipboardData/.test(src), '读剪贴板走 uni.getClipboardData');
     check(/clipboard\.readText/.test(src), 'H5 上退到 navigator.clipboard');
     check(/点右上角 ✎ 用剪贴板内容替换描述/.test(src), '描述框下面有用法提示');
+
+    // 备好提示词 + 每条的标记
+    check(/styleFillText/.test(src), '「填入提示词」用的是备好的完整提示词');
+    check(!/stylePhrase/.test(src), '页面不再直接用短句版(短句只作兜底)');
+    check(/library-tag/.test(src) && /item\.traits \? '已备好' : '简版'/.test(src), '每条带「已备好/简版」小标记');
+    check(/确认替换/.test(src) && /stylePendingReplace/.test(src), '已有内容时第二次点击才替换');
+    check(/v-if="styleNotice"/.test(src) && /styleNoticeKind === 'warn'/.test(src), '提醒与成功反馈用两种语气显示');
   }
 } finally {
   fs.rmSync(tmpDir, { recursive: true, force: true });

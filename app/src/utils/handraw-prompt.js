@@ -11,8 +11,22 @@ import {
   HANDRAW_TOTAL,
   HANDRAW_SOURCE,
 } from './handraw-styles.js';
+// 261 条"备好提示词"（规则拼装，由 tools/generate-handraw-prompts.mjs 生成）
+import {
+  HANDRAW_PROMPTS,
+  HANDRAW_PROMPT_SLOT,
+  HANDRAW_PROMPT_COUNT,
+} from './handraw-prompts.js';
 
-export { HANDRAW_GROUPS, HANDRAW_STYLES, HANDRAW_TOTAL, HANDRAW_SOURCE };
+export {
+  HANDRAW_GROUPS,
+  HANDRAW_STYLES,
+  HANDRAW_TOTAL,
+  HANDRAW_SOURCE,
+  HANDRAW_PROMPTS,
+  HANDRAW_PROMPT_SLOT,
+  HANDRAW_PROMPT_COUNT,
+};
 
 // 主题留空时写进文案的占位提示
 export const HANDRAW_THEME_PLACEHOLDER = '（把这里换成你想画的主题）';
@@ -112,8 +126,22 @@ function traitsOf(style) {
 }
 
 /**
- * 填进 App 提示词框的一句话：主体描述 + 风格短语。
- * 例: 手绘风格「Playful Deadpan Doodle」（参考 Gemma Correll；松散黑线、怪萌人物、少量点色…）
+ * 填进 App 提示词框的**完整提示词**：事先备好的那条（开头带 [这里写主体] 占位）。
+ * 数据缺这一条时退回短句 stylePhrase()，不会出现空填入。
+ */
+export function styleFillText(style) {
+  if (!style) return '';
+  return HANDRAW_PROMPTS[style.number] || stylePhrase(style);
+}
+
+// 这条风格有没有备好的提示词
+export function hasStylePrompt(number) {
+  return !!HANDRAW_PROMPTS[String(number == null ? '' : number).trim()];
+}
+
+/**
+ * 短句版：只描述画风，不含占位与构图要求。
+ * 现在不直接用于「填入」（填入用的是备好的完整提示词），留作兜底与文案复用。
  */
 export function stylePhrase(style) {
   if (!style) return '';

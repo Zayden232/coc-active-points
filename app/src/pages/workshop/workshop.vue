@@ -747,7 +747,9 @@
 
         <text class="library-group-name">{{ styleGroupName }}</text>
 
-        <text v-if="styleCopiedText" class="library-status">✓ {{ styleCopiedText }}</text>
+        <text v-if="styleNotice" class="library-status" :class="styleNoticeKind">
+          {{ styleNoticeKind === 'warn' ? '⚠ ' : '✓ ' }}{{ styleNotice }}
+        </text>
 
         <scroll-view scroll-y class="library-list">
           <view v-for="item in styleVisible" :key="item.number" class="library-item">
@@ -768,9 +770,14 @@
                   <text class="library-number">{{ item.number }}</text>
                   <text class="library-name">{{ item.name }}</text>
                 </view>
-                <text class="library-reference">
-                  参考 {{ item.reference }} · 分类 {{ item.group }}
-                </text>
+                <view class="library-meta">
+                  <text class="library-reference">
+                    参考 {{ item.reference }} · 分类 {{ item.group }}
+                  </text>
+                  <text class="library-tag" :class="{ thin: !item.traits }">
+                    {{ item.traits ? '已备好' : '简版' }}
+                  </text>
+                </view>
                 <text class="library-traits">
                   {{ item.traits || '上游未提供核心特征，直接用作者名 + 风格名描述即可。' }}
                 </text>
@@ -778,8 +785,12 @@
             </view>
 
             <view class="library-actions">
-              <button class="library-action" @click="useStylePrompt(item)">
-                填入提示词
+              <button
+                class="library-action"
+                :class="{ confirming: stylePendingReplace === item.number }"
+                @click="useStylePrompt(item)"
+              >
+                {{ stylePendingReplace === item.number ? '确认替换' : '填入提示词' }}
               </button>
               <button
                 class="library-action primary"
@@ -802,7 +813,8 @@
 
         <text class="library-foot">
           风格数据与参考图来自 GitHub yang0/handraw-style（点图片可放大）。
-          复制内容含编号、风格名、参考作者与核心视觉特征，粘到其它 AI 即可让它按这个画风出提示词或出图。
+          「填入提示词」填的是按该风格拼好的完整提示词（开头 [这里写主体] 换成你想画的东西即可），
+          标「简版」的 16 条上游没有核心特征、只用作者名与风格名；「复制画风」复制的是 skill 原生文案。
         </text>
       </view>
     </view>
@@ -876,7 +888,7 @@ import {
   HANDRAW_TOTAL,
   countByGroup,
   filterStyles,
-  stylePhrase,
+  styleFillText,
   styleThumbPath,
   buildStylePrompt,
 } from '@/utils/handraw-prompt';
@@ -964,10 +976,13 @@ export default {
       styleLimit: 30,
       styleGroups: HANDRAW_GROUPS,
       styleTotal: HANDRAW_TOTAL,
-      // 复制反馈(uni.showToast 会被这个弹层挡住, 所以自己给看得见的反馈)
+      // 复制/替换的反馈(uni.showToast 会被这个弹层挡住, 所以自己给看得见的反馈)
       styleCopied: '',
-      styleCopiedText: '',
-      styleCopyTimer: null,
+      styleNotice: '',
+      styleNoticeKind: 'ok',
+      styleNoticeTimer: null,
+      // 描述框已有内容时, 第一次点「填入」只提醒, 再点一次才真替换
+      stylePendingReplace: '',
       // 风格参考图的大图预览 + 加载失败的编号(缺图时隐藏)
       stylePreview: null,
       styleThumbBroken: {},
@@ -1283,7 +1298,7 @@ export default {
 
     closeStyleLibrary() {
       this.styleLibraryOpen = false;
-      this.clearCopyFeedback();
+      this.clearStyleState();
     },
 
     pickStyleGroup(id) {
@@ -1295,6 +1310,7 @@ export default {
     // 关键词/分类变了就回到第一批
     resetStyleList() {
       this.styleLimit = 30;
+      this.clearStyleState();
     },
 
     showMoreStyles() {
@@ -1328,56 +1344,79 @@ export default {
     },
 
     /**
-     * 填进本页提示词框。
-     * 已经有内容就把画风追加在后面(工坊本来就建议"主体 + 风格 + 场景"),
-     * 不覆盖用户自己写的主体描述。
+     * 填入提示词：填的是**事先备好的完整提示词**（开头留了 [这里写主体] 占位，
+     * 后面是该风格的完整视觉特征 + 统一的构图/光线/无文字要求）。
+     * 描述框里已经有自己写的内容时第一次点只提醒（这是整体替换，不是追加），再点一次才动手。
      */
-    useStylePrompt(style) {
+    async useStylePrompt(style) {
       if (this.pending || this.busy) return;
-      const phrase = stylePhrase(style);
+      const prepared = styleFillText(style).slice(0, 1000);
       const current = this.prompt.trim();
-      const merged =
-        current && !current.includes(style.name) ? `${current}，${phrase}` : phrase;
-      this.prompt = merged.slice(0, 1000);
+
+      if (current && current !== prepared && this.stylePendingReplace !== style.number) {
+        this.stylePendingReplace = style.number;
+        this.showStyleNotice(
+          `描述框里已有内容，再点一次「确认替换」就会用风格 ${style.number} 的提示词覆盖它。`,
+          'warn'
+        );
+        return;
+      }
+
+      this.prompt = prepared;
       // 这是用户挑定的最终文字, 按"自己写的"处理(东方幻境不再要求重新整理)
       this.promptSource = 'manual';
       this.styleLibraryOpen = false;
-      this.clearCopyFeedback();
-      this.toast(`已填入风格 ${style.number}`);
+      this.clearStyleState();
+      this.toast(`已填入风格 ${style.number} 的提示词`);
     },
 
-    clearCopyFeedback() {
-      if (this.styleCopyTimer) {
-        clearTimeout(this.styleCopyTimer);
-        this.styleCopyTimer = null;
+    clearStyleNotice() {
+      if (this.styleNoticeTimer) {
+        clearTimeout(this.styleNoticeTimer);
+        this.styleNoticeTimer = null;
       }
+      this.styleNotice = '';
+      this.styleNoticeKind = 'ok';
       this.styleCopied = '';
-      this.styleCopiedText = '';
+    },
+
+    // 关弹层 / 换分类 / 换关键词时把提示和"待确认替换"一起清掉
+    clearStyleState() {
+      this.clearStyleNotice();
+      this.stylePendingReplace = '';
     },
 
     // 复制成功/失败都写在弹层里(uni.showToast 的层级比这个弹层低, 会被挡住看不见)
-    showCopyFeedback(number, text) {
-      this.clearCopyFeedback();
-      this.styleCopied = number;
-      this.styleCopiedText = text;
-      this.styleCopyTimer = setTimeout(() => {
+    showStyleNotice(text, kind = 'ok', copiedNumber = '') {
+      this.clearStyleNotice();
+      this.styleNotice = text;
+      this.styleNoticeKind = kind;
+      this.styleCopied = copiedNumber;
+      this.styleNoticeTimer = setTimeout(() => {
+        this.styleNotice = '';
+        this.styleNoticeKind = 'ok';
         this.styleCopied = '';
-        this.styleCopiedText = '';
-        this.styleCopyTimer = null;
+        this.styleNoticeTimer = null;
       }, 4000);
     },
 
-    // 复制完整画风文案, 粘到别的 AI 里让它出提示词或出图
+    // 复制完整画风文案(skill 原生文案: 编号 + 风格名 + 作者 + 特征 + 主题占位 + 英文风格名)
     copyStylePrompt(style) {
       const data = buildStylePrompt(style);
+      this.stylePendingReplace = '';
       if (typeof uni.setClipboardData !== 'function') {
-        this.showCopyFeedback(style.number, `请长按下面的文字手动复制（${style.number}）`);
+        this.showStyleNotice(`请长按下面的文字手动复制（${style.number}）`, 'warn', style.number);
         return;
       }
       uni.setClipboardData({
         data,
-        success: () => this.showCopyFeedback(style.number, `风格 ${style.number} 已复制到剪贴板，粘到其它 AI 就能用`),
-        fail: () => this.showCopyFeedback(style.number, '复制失败，请长按文字手动复制'),
+        success: () =>
+          this.showStyleNotice(
+            `风格 ${style.number} 已复制到剪贴板，粘到其它 AI 就能用`,
+            'ok',
+            style.number
+          ),
+        fail: () => this.showStyleNotice('复制失败，请长按文字手动复制', 'warn', style.number),
       });
     },
 
@@ -3300,17 +3339,25 @@ button[disabled] {
   margin-top: 12rpx;
 }
 
-/* 复制反馈: 弹层比 uni.showToast 层级高, 所以反馈就写在弹层里 */
+/* 复制/替换反馈: 弹层比 uni.showToast 层级高, 所以反馈就写在弹层里 */
 .library-status {
   display: block;
   flex-shrink: 0;
   margin-top: 12rpx;
   padding: 12rpx 18rpx;
   border-radius: 12rpx;
-  background: #eef7f0;
-  color: #3f7a51;
   font-size: 21rpx;
   line-height: 1.5;
+}
+
+.library-status.ok {
+  background: #eef7f0;
+  color: #3f7a51;
+}
+
+.library-status.warn {
+  background: #fdf4e3;
+  color: #8a6a34;
 }
 
 .library-item {
@@ -3390,6 +3437,34 @@ button[disabled] {
   font-size: 20rpx;
 }
 
+/* 参考作者那一行 + 「已备好/简版」小标记 */
+.library-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8rpx 12rpx;
+  margin-top: 8rpx;
+}
+
+.library-meta .library-reference {
+  margin-top: 0;
+}
+
+.library-tag {
+  flex-shrink: 0;
+  padding: 2rpx 10rpx;
+  border: 2rpx solid #d8d0ee;
+  border-radius: 999rpx;
+  color: #7f6fb5;
+  font-size: 17rpx;
+  line-height: 1.5;
+}
+
+.library-tag.thin {
+  border-color: #e6e2ee;
+  color: #a49fbb;
+}
+
 .library-traits {
   display: block;
   margin-top: 8rpx;
@@ -3430,6 +3505,14 @@ button[disabled] {
   border-color: #a9d3b6;
   background: #eaf7ee;
   color: #3f7a51;
+}
+
+/* 「填入」的第二下: 提示这是一次整体替换 */
+.library-action.confirming {
+  border-color: #e6c98a;
+  background: #fdf4e3;
+  color: #8a6a34;
+  font-weight: 600;
 }
 
 .library-more {

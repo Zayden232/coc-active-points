@@ -2683,6 +2683,25 @@ node tools/browser-page-check.mjs    # 28 PASS           页面级渲染巡检
 3. **分类名与参考图** —— 分类名改成"该类两个最有代表性的子风格"提炼出的中文关键词（字母降级成角标），
    列表每条加了参考图缩略图 + 点开大图。
 
+**附：261 条风格的「备好提示词」（同日，用户反馈）**
+
+「填入提示词」不再只填一句"手绘风格「X」（参考 Y；特征…）"，而是填**事先拼好的完整提示词**：
+
+```text
+数据      app/src/utils/handraw-prompts.js （261 条 / 约 110 KB, 规则拼装, 不调用任何模型）
+生成      node tools/generate-handraw-prompts.mjs
+结构      [这里写主体]，<英文风格名> 手绘插画风格（参考 <作者>）：<该风格的核心视觉特征>。
+          主体居中，构图简洁，背景留白干净，柔和自然光，画质清晰、线条干净、色彩克制，画面中不出现任何文字。
+长度      99–219 字(平均 167), 描述框上限 1000 字
+语言      中文为主 + 保留英文风格名(不少模型靠它激活画风) + 参考作者放括号里弱化
+校验      条数 261 / 每条以占位符开头 / 长度 ≤500 / 无重复 / 编号齐全, 任一不合格直接报错退出
+交互      描述框为空 → 直接填入; 已有内容 → 第一次点只提醒(按钮变「确认替换」), 再点一次才整体替换
+标记      有核心特征的标「已备好」; 上游没有特征的 16 条(201–216)标「简版」
+复制      「复制画风」一行没动 —— 仍然复制 skill 原生文案(编号/风格名/作者/特征/主题占位/英文行)
+```
+
+---
+
 **附：点 ✎ 用剪贴板内容替换画面描述（同日，用户反馈）**
 
 描述框里常留着上一次的内容，每次都要"全选 + 删除 + 长按粘贴"。于是把标题栏的 ✎ 从纯装饰改成按钮：
@@ -2699,9 +2718,9 @@ node tools/browser-page-check.mjs    # 28 PASS           页面级渲染巡检
 **验证**：
 
 ```bash
-node tools/handraw-library-flow.mjs     # 192 PASS / 0 FAIL  数据完整性 + 过滤/文案 + 页面接线
-node tools/handraw-library-ui-check.mjs # 44 PASS / 0 FAIL   真浏览器: 真点击 + 真键盘输入 + 剪贴板读写
-node tools/check-app-bundle.mjs         # 59 项               产物断言(风格库与粘贴相关 26 项)
+node tools/handraw-library-flow.mjs     # 230 PASS / 0 FAIL  数据 + 备好提示词 + 过滤/文案 + 页面接线
+node tools/handraw-library-ui-check.mjs # 47 PASS / 0 FAIL   真浏览器: 真点击 + 真键盘输入 + 剪贴板读写
+node tools/check-app-bundle.mjs         # 66 项               产物断言(风格库/粘贴/备好提示词相关 33 项)
 node tools/workshop-oriental-flow.mjs   # 32 PASS             东方幻境未被破坏
 ```
 

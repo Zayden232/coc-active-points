@@ -15,6 +15,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 
+// 备好的提示词数据(纯数据模块, 直接读来当期望值)
+const { HANDRAW_PROMPTS } = await import(
+  new URL('../app/src/utils/handraw-prompts.js', import.meta.url).href
+);
+
 const base = (process.argv[2] || 'http://localhost:5173').replace(/\/$/, '');
 
 let pass = 0;
@@ -68,6 +73,8 @@ const SNAPSHOT = (label) => `(() => {
     firstNumber: first ? first.querySelector('.library-number').textContent.trim() : '',
     firstName: first ? first.querySelector('.library-name').textContent.trim() : '',
     more: text('.library-more'),
+    firstTag: text('.library-tag'),
+    tagCount: document.querySelectorAll('.library-tag').length,
     statusText: text('.library-status'),
     statusHit,
     statusVisible,
@@ -214,6 +221,10 @@ if (
     opened.firstName === 'Playful Deadpan Doodle',
     `第一条风格名正确（实际 ${opened.firstName}）`
   );
+  check(
+    opened.tagCount === 30 && opened.firstTag === '已备好',
+    `每条都有「已备好」小标记（${opened.tagCount} 个, 第一个「${opened.firstTag}」）`
+  );
 
   // 参考图: 真的加载出来了(不是破图)
   check(opened.thumbCount === 30, `每条都挂了参考图（${opened.thumbCount} 张）`);
@@ -268,11 +279,19 @@ if (
     check(String(clipboard).includes('English style hint'), '剪贴板文案里有给英文模型的风格名');
   }
 
-  // 填入
+  // 填入: 填的是备好的完整提示词(不是原来那句短描述)
   check(!filled.hasPanel, '「填入提示词」后弹层自动关闭');
   check(
-    filled.promptValue.includes('Playful Deadpan Doodle'),
-    `填入的风格进了提示词框:「${filled.promptValue.slice(0, 40)}…」`
+    filled.promptValue === HANDRAW_PROMPTS['001'],
+    `填入的正好是 001 备好的提示词（实际「${filled.promptValue.slice(0, 30)}…」）`
+  );
+  check(
+    filled.promptValue.startsWith('[这里写主体]'),
+    '填入内容开头就是主体占位, 用户先改这一句'
+  );
+  check(
+    filled.promptValue.includes('画面中不出现任何文字'),
+    '填入内容带统一的构图/无文字要求'
   );
 
   // ✎ 粘贴: 真点按钮 → 用剪贴板内容整体替换描述
