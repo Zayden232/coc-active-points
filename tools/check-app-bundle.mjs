@@ -82,6 +82,11 @@ const checks = [
   ['风格库分类短名已进包', '极简线描·冷幽默', -1],
   ['风格库分类字母角标已进包', 'library-tab-id', -1],
   ['风格库主题输入框已删除', 'styleTheme', 0],
+  // 点 ✎ 用剪贴板内容替换描述(2026-09-14)
+  ['描述框粘贴入口已进包', 'pastePromptFromClipboard', -1],
+  ['描述框粘贴提示已进包', '用剪贴板内容替换描述', -1],
+  ['读剪贴板走 uni API', 'getClipboardData', -1],
+  ['H5 剪贴板退路已进包', 'clipboard.readText', -1],
 ];
 
 let fail = 0;

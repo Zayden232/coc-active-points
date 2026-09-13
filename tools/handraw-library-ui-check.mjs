@@ -90,6 +90,13 @@ const CLEAR_SEARCH = `(() => {
   return 'cleared';
 })()`;
 
+// 往剪贴板里放一段文字, 准备测 ✎ 粘贴(需要 cdp-run 授予的剪贴板权限)
+const PASTE_TEXT = '雪夜里点鞭炮的小男孩，红棉袄，卡通插画';
+const WRITE_CLIPBOARD = `(async () => {
+  try { await navigator.clipboard.writeText(${JSON.stringify(PASTE_TEXT)}); return 'written'; }
+  catch (e) { return 'ERR:' + ((e && e.message) || e); }
+})()`;
+
 const steps = [
   { js: SNAPSHOT('刚进页面(还没点)') },
   { click: '.style-entry', after: 1200 },
@@ -121,6 +128,10 @@ const steps = [
   },
   { clickText: '填入提示词', pick: 'first', after: 900 },
   { js: SNAPSHOT('点第一条的「填入提示词」') },
+  // ✎: 用剪贴板内容整体替换描述
+  { js: WRITE_CLIPBOARD, after: 300 },
+  { click: '.prompt-symbol', after: 1200 },
+  { js: SNAPSHOT('点 ✎ 粘贴剪贴板') },
 ];
 
 fs.writeFileSync(stepsFile, JSON.stringify(steps), 'utf8');
@@ -142,21 +153,36 @@ const allResults = JSON.parse(fs.readFileSync(outFile, 'utf8')).results;
 const snapshots = allResults
   .filter((r) => r.kind === 'js' && r.value && typeof r.value === 'object' && r.value.label)
   .map((r) => r.value);
-// 中间那一步清空搜索框返回的是字符串, 别把它当成剪贴板内容
+// 中间那两步(清空搜索/写剪贴板)返回的是短字符串, 别把它们当成剪贴板内容
 const clipboard = (allResults.find(
-  (r) => r.kind === 'js' && typeof r.value === 'string' && r.value !== 'cleared'
+  (r) =>
+    r.kind === 'js' &&
+    typeof r.value === 'string' &&
+    (r.value.startsWith('【手绘风格') || r.value.startsWith('ERR:'))
 ) || {}).value;
 const typed = allResults.find((r) => r.kind === 'insertText');
 
 console.log('\n== 断言 ==');
-check(snapshots.length === 11, `拿到 11 个快照（实际 ${snapshots.length}）`);
+check(snapshots.length === 12, `拿到 12 个快照（实际 ${snapshots.length}）`);
 
-const [before, opened, searched, cleared, viewer, viewerClosed, groupG, more, all, copied, filled] =
-  snapshots;
+const [
+  before,
+  opened,
+  searched,
+  cleared,
+  viewer,
+  viewerClosed,
+  groupG,
+  more,
+  all,
+  copied,
+  filled,
+  pasted,
+] = snapshots;
 
 if (
   before && opened && searched && cleared && viewer && viewerClosed && groupG && more && all &&
-  copied && filled
+  copied && filled && pasted
 ) {
   check(before.entryVisible, '「风格提示词库」入口渲染出来了(工坊已连上后端)');
   check(!before.hasPanel, '没点之前弹层不存在');
@@ -247,6 +273,16 @@ if (
   check(
     filled.promptValue.includes('Playful Deadpan Doodle'),
     `填入的风格进了提示词框:「${filled.promptValue.slice(0, 40)}…」`
+  );
+
+  // ✎ 粘贴: 真点按钮 → 用剪贴板内容整体替换描述
+  check(
+    pasted.promptValue === PASTE_TEXT,
+    `点 ✎ 后用剪贴板内容替换了描述（实际「${pasted.promptValue.slice(0, 40)}」）`
+  );
+  check(
+    !pasted.promptValue.includes('Playful Deadpan Doodle'),
+    '替换是整体替换, 旧内容没有残留'
   );
 
   // 布局

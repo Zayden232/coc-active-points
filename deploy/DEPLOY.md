@@ -2672,7 +2672,6 @@ node tools/browser-page-check.mjs    # 28 PASS           页面级渲染巡检
 ```
 
 **这一版修掉的三个问题（用户反馈）**：
-
 1. **「点了复制没有任何反应」** —— 复制其实成功了，但 `uni.showToast` 的 `z-index` 是 **999**，
    而弹层是 **1000**，提示被整个挡住（真浏览器实测 `elementFromPoint` 命中的是列表项而不是 toast）。
    改为弹层内反馈：顶部一行绿色提示 + 那条的按钮变「已复制 ✓」（4 秒复原）。
@@ -2684,12 +2683,25 @@ node tools/browser-page-check.mjs    # 28 PASS           页面级渲染巡检
 3. **分类名与参考图** —— 分类名改成"该类两个最有代表性的子风格"提炼出的中文关键词（字母降级成角标），
    列表每条加了参考图缩略图 + 点开大图。
 
+**附：点 ✎ 用剪贴板内容替换画面描述（同日，用户反馈）**
+
+描述框里常留着上一次的内容，每次都要"全选 + 删除 + 长按粘贴"。于是把标题栏的 ✎ 从纯装饰改成按钮：
+
+```text
+读剪贴板   uni.getClipboardData(App) → 失败/不存在时退到 navigator.clipboard.readText()(H5)
+           (H5 上 navigator 需要剪贴板权限; 测试里用 cdp-run 的 Browser.grantPermissions 授予)
+处理       \r\n → \n、去首尾空白、按 textarea 上限 1000 字截断, 整体替换
+状态       标记 promptSource='manual'(粘进来的是用户自己的稿子, 东方幻境不再要求重新整理)
+反馈       已粘贴 N 字, 替换原描述 / 超出上限已截断 / 剪贴板里没有文字 / 读不到剪贴板请长按手动粘贴
+兜底       读不到时**不动原有描述**; 生成中与提交中不响应
+```
+
 **验证**：
 
 ```bash
-node tools/handraw-library-flow.mjs     # 174 PASS / 0 FAIL  数据完整性 + 过滤/文案 + 页面接线
-node tools/handraw-library-ui-check.mjs # 42 PASS / 0 FAIL   真浏览器: 真点击 + 真键盘输入 + 读回剪贴板
-node tools/check-app-bundle.mjs         # 55 项               产物断言(风格库相关 22 项)
+node tools/handraw-library-flow.mjs     # 192 PASS / 0 FAIL  数据完整性 + 过滤/文案 + 页面接线
+node tools/handraw-library-ui-check.mjs # 44 PASS / 0 FAIL   真浏览器: 真点击 + 真键盘输入 + 剪贴板读写
+node tools/check-app-bundle.mjs         # 59 项               产物断言(风格库与粘贴相关 26 项)
 node tools/workshop-oriental-flow.mjs   # 32 PASS             东方幻境未被破坏
 ```
 

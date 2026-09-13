@@ -318,7 +318,13 @@
                   {{ creationMode === 'oriental' ? '最终提示词仍可手动编辑' : '主体 + 风格 + 场景，让表达更清晰' }}
                 </text>
               </view>
-              <text class="prompt-symbol">✎</text>
+              <button
+                class="prompt-symbol"
+                :disabled="!!pending || busy"
+                @click="pastePromptFromClipboard"
+              >
+                ✎
+              </button>
             </view>
 
             <view class="prompt-shell">
@@ -331,7 +337,7 @@
                 @input="onPromptEdited"
               />
               <view class="prompt-bottom">
-                <text>灵感不必复杂，描述尽量具体</text>
+                <text>灵感不必复杂；点右上角 ✎ 用剪贴板内容替换描述</text>
                 <text class="prompt-count">{{ charCount(prompt) }}/1000</text>
               </view>
             </view>
@@ -1203,6 +1209,70 @@ export default {
      */
     onPromptEdited() {
       this.promptSource = this.prompt.trim() ? 'manual' : '';
+    },
+
+    /**
+     * 读剪贴板文字。
+     * 原生 App 走 uni.getClipboardData；H5 上它可能不可用，就退到 navigator.clipboard。
+     * 读到空串 = 剪贴板里没文字；resolve(null) = 读不到(没有权限/接口不存在)。
+     */
+    readClipboardText() {
+      return new Promise((resolve) => {
+        const viaNavigator = () => {
+          const nav = typeof navigator === 'undefined' ? null : navigator;
+          if (!nav || !nav.clipboard || typeof nav.clipboard.readText !== 'function') {
+            resolve(null);
+            return;
+          }
+          nav.clipboard
+            .readText()
+            .then((text) => resolve(text == null ? '' : String(text)))
+            .catch(() => resolve(null));
+        };
+
+        if (typeof uni.getClipboardData !== 'function') {
+          viaNavigator();
+          return;
+        }
+        try {
+          uni.getClipboardData({
+            // 成功但内容为空 = 剪贴板里确实没文字(不要再去试 navigator)
+            success: (res) => resolve(res && res.data != null ? String(res.data) : ''),
+            fail: viaNavigator,
+          });
+        } catch (e) {
+          viaNavigator();
+        }
+      });
+    },
+
+    /**
+     * 点 ✎：把剪贴板里的内容**替换**到描述框里。
+     * 用这个入口就不用手动全选删除了 —— 直接整体替换，并按 textarea 的 1000 字上限截断。
+     */
+    async pastePromptFromClipboard() {
+      if (this.pending || this.busy) return;
+      const raw = await this.readClipboardText();
+
+      if (raw === null) {
+        this.toast('读不到剪贴板，请长按输入框手动粘贴');
+        return;
+      }
+      const value = String(raw).replace(/\r\n?/g, '\n').trim();
+      if (!value) {
+        this.toast('剪贴板里没有文字');
+        return;
+      }
+
+      const clipped = value.slice(0, 1000);
+      this.prompt = clipped;
+      // 粘进来的就是用户自己的稿子: 按"自己写的"处理(东方幻境不再要求重新整理)
+      this.promptSource = 'manual';
+      this.toast(
+        clipped.length < value.length
+          ? `已粘贴 ${clipped.length} 字（超出 1000 字上限，已截断）`
+          : `已粘贴 ${clipped.length} 字，替换原描述`
+      );
     },
 
     // ---------- 风格提示词库 ----------
@@ -2079,11 +2149,32 @@ button[disabled] {
   font-size: 20rpx;
 }
 
-.corner-symbol,
-.prompt-symbol {
+.corner-symbol {
   flex-shrink: 0;
   color: #c1badf;
   font-size: 45rpx;
+}
+
+/* ✎ 是个按钮: 点一下 = 用剪贴板内容整体替换描述框(省掉"全选+删除+长按粘贴") */
+.prompt-symbol {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 2rpx solid #e8e5f4;
+  border-radius: 50%;
+  background: #f8f6fd;
+  color: #b3a9dc;
+  font-size: 38rpx;
+  line-height: 1;
+}
+
+.prompt-symbol[disabled] {
+  opacity: .5;
 }
 
 .description {

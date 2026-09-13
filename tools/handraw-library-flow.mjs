@@ -37,7 +37,7 @@ const checkEq = (name, actual, expected) => {
 };
 const section = (name) => console.log('\n== ' + name + ' ==');
 
-const stub = { toasts: [], modals: [], clipboard: [] };
+const stub = { toasts: [], modals: [], clipboard: [], clipboardRead: '', clipboardReadFail: false };
 
 globalThis.__flow = stub;
 globalThis.document = {
@@ -59,6 +59,14 @@ globalThis.uni = {
   setClipboardData: (o) => {
     stub.clipboard.push(o && o.data);
     if (o && o.success) o.success();
+  },
+  // 读剪贴板: 由 stub.clipboardRead / stub.clipboardReadFail 控制
+  getClipboardData: (o) => {
+    if (stub.clipboardReadFail) {
+      if (o && o.fail) o.fail({ errMsg: 'getClipboardData:fail' });
+      return;
+    }
+    if (o && o.success) o.success({ data: stub.clipboardRead });
   },
   navigateTo() {},
   switchTab() {},
@@ -565,7 +573,87 @@ try {
     inst.styleThumbBroken = {};
   }
 
-  section('7. 模板接线(改动都在页面上, 不依赖后端)');
+  section('7. 点 ✎ 用剪贴板内容替换描述');
+  {
+    const nextTick2 = () => nextTick();
+    const tick = async () => {
+      await nextTick2();
+      await nextTick2();
+    };
+
+    // 正常: 整体替换(包括把 \r\n 规整成 \n)
+    stub.toasts.length = 0;
+    stub.clipboardReadFail = false;
+    stub.clipboardRead = '一只在雪地里点鞭炮的小男孩，红色棉袄\r\n卡通插画';
+    inst.prompt = '这是要被替换掉的旧描述';
+    inst.promptSource = 'generated';
+    await inst.pastePromptFromClipboard();
+    await tick();
+    checkEq(
+      '描述被整体替换',
+      inst.prompt,
+      '一只在雪地里点鞭炮的小男孩，红色棉袄\n卡通插画'
+    );
+    check(!inst.prompt.includes('旧描述'), '旧内容没有残留');
+    checkEq('粘贴后标记为 manual', inst.promptSource, 'manual');
+    check(
+      stub.toasts.some((t) => t.includes('替换原描述')),
+      `有「已粘贴」提示:「${stub.toasts[stub.toasts.length - 1]}」`
+    );
+
+    // 剪贴板里有换行/前后空格: 去掉首尾空白, 中间换行保留
+    stub.clipboardRead = '\n\n  雪夜灯笼  \n';
+    await inst.pastePromptFromClipboard();
+    await tick();
+    checkEq('首尾空白被去掉', inst.prompt, '雪夜灯笼');
+
+    // 超长: 按 textarea 上限截断
+    stub.toasts.length = 0;
+    stub.clipboardRead = '龙'.repeat(1200);
+    await inst.pastePromptFromClipboard();
+    await tick();
+    checkEq('超长内容截断到 1000 字', inst.prompt.length, 1000);
+    check(
+      stub.toasts.some((t) => t.includes('截断')),
+      `提示里说明了截断:「${stub.toasts[stub.toasts.length - 1]}」`
+    );
+
+    // 剪贴板为空: 别把原来的描述清掉
+    stub.toasts.length = 0;
+    inst.prompt = '保留我';
+    stub.clipboardRead = '   ';
+    await inst.pastePromptFromClipboard();
+    await tick();
+    checkEq('剪贴板为空时不动原文', inst.prompt, '保留我');
+    check(
+      stub.toasts.some((t) => t.includes('没有文字')),
+      `给了「剪贴板里没有文字」的提示:「${stub.toasts[stub.toasts.length - 1]}」`
+    );
+
+    // 读不到剪贴板(没有接口 / 没权限): 提示手动粘贴
+    stub.toasts.length = 0;
+    stub.clipboardReadFail = true;
+    const keepUni = globalThis.uni;
+    await inst.pastePromptFromClipboard();
+    await tick();
+    check(
+      stub.toasts.some((t) => t.includes('长按')),
+      `读不到剪贴板时提示手动粘贴:「${stub.toasts[stub.toasts.length - 1]}」`
+    );
+    stub.clipboardReadFail = false;
+    check(!!keepUni, 'uni 桩仍在');
+
+    // 生成中/提交中不许改描述
+    inst.busy = true;
+    inst.prompt = '别动我';
+    stub.clipboardRead = '新内容';
+    await inst.pastePromptFromClipboard();
+    await tick();
+    checkEq('生成中不响应粘贴', inst.prompt, '别动我');
+    inst.busy = false;
+  }
+
+  section('8. 模板接线(改动都在页面上, 不依赖后端)');
   {
     const src = fs.readFileSync(pageFile, 'utf8');
     check(/@click="openStyleLibrary"/.test(src), '提示词卡片里有「风格提示词库」入口');
@@ -600,6 +688,14 @@ try {
       !/uni\.showToast\(\{[^}]*已复制/.test(src),
       '复制反馈不依赖 showToast(它的层级比弹层低, 会被挡住)'
     );
+
+    // ✎ 粘贴
+    check(/@click="pastePromptFromClipboard"/.test(src), '✎ 挂了「粘贴剪贴板」');
+    check(/class="prompt-symbol"/.test(src) && /<button[\s\S]{0,120}prompt-symbol/.test(src), '✎ 是可点的 button(不是纯文字)');
+    check(!/<text class="prompt-symbol">/.test(src), '旧的纯文字 ✎ 已换掉');
+    check(/getClipboardData/.test(src), '读剪贴板走 uni.getClipboardData');
+    check(/clipboard\.readText/.test(src), 'H5 上退到 navigator.clipboard');
+    check(/点右上角 ✎ 用剪贴板内容替换描述/.test(src), '描述框下面有用法提示');
   }
 } finally {
   fs.rmSync(tmpDir, { recursive: true, force: true });

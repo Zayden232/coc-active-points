@@ -60,7 +60,7 @@ node tools/audit-for-publish.mjs
 | `workshop-oriental-flow.mjs` | 32 | 东方幻境：直接自己写提示词也能生成、默认服装 |
 | `wheel-guest-flow.mjs` | 21 | 转盘每日奖励：访客也能抽、只读门禁已删干净 |
 | `wheel-fun-pick-flow.mjs` | 77 | 随机抽人自选成员：按本周分数分组、整组选中、只从勾选名单里抽 |
-| `handraw-library-flow.mjs` | 174 | 工坊「风格提示词库」：261 条数据完整性、过滤与文案、页面接线（分类短名/分批渲染/追加不覆盖/复制反馈/参考图） |
+| `handraw-library-flow.mjs` | 192 | 工坊「风格提示词库」：261 条数据完整性、过滤与文案、页面接线（分类短名/分批渲染/追加不覆盖/复制反馈/参考图/点 ✎ 粘贴剪贴板） |
 | `star-paste-roster.json` | — | 上面几个脚本用到的成员名单数据 |
 
 ```bash
@@ -76,7 +76,7 @@ node tools/workshop-oriental-flow.mjs
 | `cdp-run.mjs` | 通用驱动：headless Chrome + CDP，按顺序执行 `{click}/{clickText}/{insertText}/{js}/{shot}/{wait}` 步骤，读计算后的布局、截图、输出 JSON（点击前会先把元素滚进视口，并给页面授予剪贴板读写权限） |
 | `browser-page-check.mjs` | 真渲染巡检 6 个页面：DOM 里不允许出现真实 `<template>`、节点数达标、关键文案可见 |
 | `wheel-fun-ui-check.mjs` | 真点击：切「随机抽人」→「自选成员」→ 点分数整组选中，断言计数/按钮状态/无横向溢出 |
-| `handraw-library-ui-check.mjs` | 真点击 + **真键盘输入**：开「风格提示词库」→ 输入 041 → 切分类 → 复制（断言提示真在屏幕最上层，并把剪贴板读回来核对）/点参考图看大图/填入提示词 |
+| `handraw-library-ui-check.mjs` | 真点击 + **真键盘输入**：开「风格提示词库」→ 输入 041 → 切分类 → 复制（断言提示真在屏幕最上层，并把剪贴板读回来核对）/点参考图看大图/填入提示词/**点 ✎ 用剪贴板内容替换描述** |
 | `dev-server-page-check.mjs` | 运行中的 dev server 能否正常编译改动后的页面 |
 | `serve-dist.mjs` | 极简静态服务器，给 `uni build` 产物起个可截图的服务 |
 
