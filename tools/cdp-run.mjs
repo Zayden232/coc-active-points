@@ -127,6 +127,19 @@ await send(
 );
 await send('Page.enable', {}, sessionId);
 await send('Runtime.enable', {}, sessionId);
+// 让页面能真读写剪贴板(否则 navigator.clipboard.readText 会以 "权限被拒" 失败,
+// 「复制」类功能就只能靠页面自己的提示来判断成败了)。
+try {
+  await send(
+    'Browser.grantPermissions',
+    {
+      permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'],
+      origin: new URL(url).origin,
+    }
+  );
+} catch (e) {
+  console.log('[cdp] 剪贴板权限授予失败(不影响其他步骤): ' + e.message);
+}
 await send('Page.navigate', { url }, sessionId);
 await sleep(waitMs);
 
@@ -168,6 +181,9 @@ async function clickSelector(sel) {
   const box = await evaluate(
     `(() => { const el = document.querySelector(${JSON.stringify(sel)});
       if (!el) return null;
+      // 横向 scroll-view 里的元素可能滚在视口外(坐标会超过视口宽度, 点不到):
+      // 先就地滚进来再取中心点。
+      if (el.scrollIntoView) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       const r = el.getBoundingClientRect();
       return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`
   );
@@ -185,6 +201,7 @@ async function clickText(text, pick = 'last') {
       // 默认取最内层(最后)那个, 避免点到包住它的大容器; pick:'first' 取第一个
       const el = ${JSON.stringify(pick)} === 'first' ? nodes[0] : nodes[nodes.length - 1];
       if (!el) return null;
+      if (el.scrollIntoView) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       const r = el.getBoundingClientRect();
       return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`
   );

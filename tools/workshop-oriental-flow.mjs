@@ -115,6 +115,18 @@ export function imageUrl(p) { return Promise.resolve(p && p.path ? p.path : '');
 export function releaseImageUrl() {}
 `;
 
+// 风格提示词库(handraw)不属于本测试范围, 给个能跑的最小桩(其自身有
+// handraw-library-flow.mjs 专门覆盖)。缺失的话页面脚本会解析不到模块。
+const HANDRAW_MOCK = `
+export const HANDRAW_GROUPS = [];
+export const HANDRAW_TOTAL = 0;
+export const HANDRAW_SOURCE = { repo: '' };
+export function countByGroup() { return {}; }
+export function filterStyles() { return []; }
+export function stylePhrase() { return ''; }
+export function buildStylePrompt() { return ''; }
+`;
+
 const durl = (code) => 'data:text/javascript;base64,' + Buffer.from(code, 'utf8').toString('base64');
 
 const nodeOps = {
@@ -194,7 +206,8 @@ try {
     .replace(/'@\/utils\/workshop-api'/g, wrap(WORKSHOP_API_MOCK))
     .replace(/'@\/utils\/workshop-db'/g, wrap(WORKSHOP_DB_MOCK))
     .replace(/'@\/utils\/workshop-payload'/g, wrap(WORKSHOP_PAYLOAD_MOCK))
-    .replace(/'@\/utils\/oriental-prompt'/g, JSON.stringify(orientalUrl));
+    .replace(/'@\/utils\/oriental-prompt'/g, JSON.stringify(orientalUrl))
+    .replace(/'@\/utils\/handraw-prompt'/g, wrap(HANDRAW_MOCK));
 
   for (const leftover of [
     '@/utils/api',
@@ -202,6 +215,7 @@ try {
     '@/utils/workshop-db',
     '@/utils/workshop-payload',
     '@/utils/oriental-prompt',
+    '@/utils/handraw-prompt',
   ]) {
     if (script.includes(leftover)) throw new Error(`${leftover} 的导入没替换成功`);
   }

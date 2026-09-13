@@ -336,6 +336,21 @@
               </view>
             </view>
 
+            <view class="style-entry-row">
+              <button
+                class="style-entry"
+                :disabled="!!pending || busy"
+                @click="openStyleLibrary"
+              >
+                <text class="style-entry-icon">✧</text>
+                <text class="style-entry-title">风格提示词库</text>
+                <text class="style-entry-meta">{{ styleTotal }} 种手绘风格</text>
+              </button>
+              <text class="style-entry-hint">
+                不会描述画风？挑一个编号，可填入本页，也可以复制到其它 AI 生成提示词。
+              </text>
+            </view>
+
             <view class="info-line">
               <text class="parameter-chip">
                 {{ creationMode === 'oriental' ? selectedSize : config.image_size }}
@@ -682,6 +697,92 @@
         </text>
       </view>
     </view>
+
+    <!-- ================= 风格提示词库 ================= -->
+    <view v-if="styleLibraryOpen" class="library-mask" @click="closeStyleLibrary">
+      <view class="library-panel" @click.stop>
+        <view class="library-header">
+          <view class="library-heading">
+            <text class="library-title">风格提示词库</text>
+            <text class="library-subtitle">
+              {{ styleTotal }} 种手绘风格 · 分 {{ styleGroupTabs.length }} 类 · 可复制到其它 AI
+            </text>
+          </view>
+          <button class="library-close" @click="closeStyleLibrary">×</button>
+        </view>
+
+        <text class="library-field-label">主题（可选，会写进复制的内容）</text>
+        <input
+          v-model="styleTheme"
+          class="library-input"
+          maxlength="80"
+          placeholder="例如：秋天的第一杯奶茶"
+        />
+
+        <input
+          v-model="styleKeyword"
+          class="library-input library-search"
+          maxlength="40"
+          placeholder="搜索编号 / 作者 / 风格名：041、水彩、绘本…"
+          @input="resetStyleList"
+        />
+
+        <scroll-view scroll-x class="library-tabs">
+          <view
+            class="library-tab"
+            :class="{ active: styleGroup === '' }"
+            @click="pickStyleGroup('')"
+          >
+            全部 {{ styleMatches.length }}
+          </view>
+          <view
+            v-for="group in styleGroupTabs"
+            :key="group.id"
+            class="library-tab"
+            :class="{ active: styleGroup === group.id }"
+            @click="pickStyleGroup(group.id)"
+          >
+            {{ group.id }} {{ group.count }}
+          </view>
+        </scroll-view>
+
+        <text class="library-group-name">{{ styleGroupName }}</text>
+
+        <scroll-view scroll-y class="library-list">
+          <view v-for="item in styleVisible" :key="item.number" class="library-item">
+            <view class="library-item-head">
+              <text class="library-number">{{ item.number }}</text>
+              <text class="library-name">{{ item.name }}</text>
+            </view>
+            <text class="library-reference">参考 {{ item.reference }} · 分类 {{ item.group }}</text>
+            <text class="library-traits">
+              {{ item.traits || '上游未提供核心特征，直接用作者名 + 风格名描述即可。' }}
+            </text>
+            <view class="library-actions">
+              <button class="library-action" @click="useStylePrompt(item)">
+                填入提示词
+              </button>
+              <button class="library-action primary" @click="copyStylePrompt(item)">
+                复制画风
+              </button>
+            </view>
+          </view>
+
+          <view v-if="!styleMatches.length" class="library-empty">
+            <text>没有匹配的风格，换个关键词试试（例如 001、水彩、绘本）。</text>
+          </view>
+
+          <button v-if="styleMore" class="library-more" @click="showMoreStyles">
+            继续显示，还有 {{ styleMore }} 条
+          </button>
+        </scroll-view>
+
+        <text class="library-foot">
+          风格数据整理自 GitHub yang0/handraw-style。复制内容含编号、风格名、参考作者与核心视觉特征，
+          粘到其它 AI 即可让它按这个画风出提示词或出图。
+        </text>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -732,6 +833,15 @@ import {
   extractBracketDescriptions,
   charCount,
 } from '@/utils/oriental-prompt';
+// 手绘风格提示词库(261 种, 分类 A–G): 数据在 utils/handraw-styles.js
+import {
+  HANDRAW_GROUPS,
+  HANDRAW_TOTAL,
+  countByGroup,
+  filterStyles,
+  stylePhrase,
+  buildStylePrompt,
+} from '@/utils/handraw-prompt';
 
 export default {
   data() {
@@ -807,6 +917,17 @@ export default {
       orientalConfigRevision: 0,
       orientalAppliedRevision: 0,
 
+      // ---------- 风格提示词库(手绘风格, 数据见 utils/handraw-styles.js) ----------
+      // 只做两件事: 填进本页提示词框, 或复制到其它 AI。
+      styleLibraryOpen: false,
+      styleKeyword: '',
+      styleGroup: '',
+      styleTheme: '',
+      // 列表分批渲染(261 条一次全渲染在原生 App 上偏重)
+      styleLimit: 30,
+      styleGroups: HANDRAW_GROUPS,
+      styleTotal: HANDRAW_TOTAL,
+
       active: false,
       pollTimer: null,
       polling: false,
@@ -831,6 +952,34 @@ export default {
         this.orientalConfigRevision !== this.orientalAppliedRevision &&
         this.promptSource !== 'manual'
       );
+    },
+
+    // ---------- 风格提示词库 ----------
+    // 分类按钮上的计数(按数据实时统计, 不手写)
+    styleGroupTabs() {
+      const counts = countByGroup();
+      return this.styleGroups.map((group) => ({ ...group, count: counts[group.id] || 0 }));
+    },
+
+    // 当前分类 + 关键词命中的全部风格
+    styleMatches() {
+      return filterStyles({ group: this.styleGroup, keyword: this.styleKeyword });
+    },
+
+    // 实际渲染出来的部分(分批加载)
+    styleVisible() {
+      return this.styleMatches.slice(0, this.styleLimit);
+    },
+
+    styleMore() {
+      return Math.max(0, this.styleMatches.length - this.styleVisible.length);
+    },
+
+    // 当前分类的完整名字(含编号区间)
+    styleGroupName() {
+      if (!this.styleGroup) return '全部风格 · A–G';
+      const group = this.styleGroupTabs.find((item) => item.id === this.styleGroup);
+      return group ? `${group.id} · ${group.name}（${group.from}–${group.to}）` : '';
     },
 
     // 额度文案: 管理员不限制(服务端回 daily_unlimited), 非管理员显示 x/10
@@ -1011,6 +1160,63 @@ export default {
      */
     onPromptEdited() {
       this.promptSource = this.prompt.trim() ? 'manual' : '';
+    },
+
+    // ---------- 风格提示词库 ----------
+    openStyleLibrary() {
+      if (this.pending || this.busy) return;
+      this.styleLibraryOpen = true;
+    },
+
+    closeStyleLibrary() {
+      this.styleLibraryOpen = false;
+    },
+
+    pickStyleGroup(id) {
+      // 再点一次同一分类 = 回到"全部"
+      this.styleGroup = this.styleGroup === id ? '' : id;
+      this.resetStyleList();
+    },
+
+    // 关键词/分类变了就回到第一批
+    resetStyleList() {
+      this.styleLimit = 30;
+    },
+
+    showMoreStyles() {
+      this.styleLimit += 30;
+    },
+
+    /**
+     * 填进本页提示词框。
+     * 已经有内容就把画风追加在后面(工坊本来就建议"主体 + 风格 + 场景"),
+     * 不覆盖用户自己写的主体描述。
+     */
+    useStylePrompt(style) {
+      if (this.pending || this.busy) return;
+      const phrase = stylePhrase(style);
+      const current = this.prompt.trim();
+      const merged =
+        current && !current.includes(style.name) ? `${current}，${phrase}` : phrase;
+      this.prompt = merged.slice(0, 1000);
+      // 这是用户挑定的最终文字, 按"自己写的"处理(东方幻境不再要求重新整理)
+      this.promptSource = 'manual';
+      this.styleLibraryOpen = false;
+      this.toast(`已填入风格 ${style.number}`);
+    },
+
+    // 复制完整画风文案, 粘到别的 AI 里让它出提示词或出图
+    copyStylePrompt(style) {
+      const data = buildStylePrompt(style, this.styleTheme);
+      if (typeof uni.setClipboardData !== 'function') {
+        this.toast('请长按上方文字手动复制');
+        return;
+      }
+      uni.setClipboardData({
+        data,
+        success: () => this.toast(`风格 ${style.number} 已复制`),
+        fail: () => this.toast('复制失败，请长按文字手动复制'),
+      });
     },
 
     setOrientalOption(field, value) {
@@ -2706,6 +2912,301 @@ button[disabled] {
 
 .gallery-empty {
   margin-top: 10rpx;
+}
+
+/* ---------- 风格提示词库入口 ---------- */
+.style-entry-row {
+  margin-top: 16rpx;
+}
+
+.style-entry {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  margin: 0;
+  padding: 14rpx 20rpx;
+  border: 2rpx solid #ded6f4;
+  border-radius: 14rpx;
+  background: linear-gradient(135deg, #f6f2ff, #fdfbff);
+  color: #6f5fae;
+  font-size: 24rpx;
+  line-height: 1.4;
+}
+
+.style-entry[disabled] {
+  opacity: .55;
+}
+
+.style-entry-icon {
+  margin-right: 10rpx;
+  font-size: 26rpx;
+}
+
+.style-entry-title {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.style-entry-meta {
+  flex-shrink: 0;
+  margin-left: 12rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 999rpx;
+  background: rgba(132, 112, 176, .12);
+  color: #8470b0;
+  font-size: 19rpx;
+}
+
+.style-entry-hint {
+  display: block;
+  margin-top: 10rpx;
+  color: #a0a2b6;
+  font-size: 19rpx;
+  line-height: 1.7;
+}
+
+/* ---------- 风格提示词库弹层 ---------- */
+.library-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 24rpx;
+  padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
+  background: rgba(20, 19, 31, .96);
+}
+
+.library-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 800px;
+  height: 88vh;
+  max-height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 24rpx;
+  border-radius: 26rpx;
+  background: #fff;
+}
+
+.library-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.library-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.library-title {
+  display: block;
+  color: #3f3a55;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.library-subtitle {
+  display: block;
+  margin-top: 6rpx;
+  color: #9a94ad;
+  font-size: 19rpx;
+}
+
+.library-close {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: #f3f2f9;
+  color: #6f6a85;
+  font-size: 40rpx;
+  line-height: 1;
+}
+
+.library-field-label {
+  display: block;
+  flex-shrink: 0;
+  margin-top: 20rpx;
+  color: #7a7d96;
+  font-size: 21rpx;
+}
+
+.library-input {
+  flex-shrink: 0;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 10rpx;
+  padding: 16rpx 18rpx;
+  border: 2rpx solid #e8eaf2;
+  border-radius: 12rpx;
+  background: #fafbfe;
+  color: #535d75;
+  font-size: 24rpx;
+  line-height: 1.6;
+}
+
+.library-search {
+  margin-top: 12rpx;
+}
+
+.library-tabs {
+  flex-shrink: 0;
+  width: 100%;
+  margin-top: 16rpx;
+  white-space: nowrap;
+}
+
+.library-tab {
+  display: inline-block;
+  margin-right: 10rpx;
+  padding: 10rpx 18rpx;
+  border: 2rpx solid #eeedf6;
+  border-radius: 999rpx;
+  background: #f9f9fd;
+  color: #7a7d96;
+  font-size: 22rpx;
+}
+
+.library-tab.active {
+  border-color: #d4ccf3;
+  background: #f0ebfd;
+  color: #7763b7;
+  font-weight: 600;
+}
+
+.library-group-name {
+  display: block;
+  flex-shrink: 0;
+  margin-top: 14rpx;
+  color: #6f6a85;
+  font-size: 22rpx;
+}
+
+.library-list {
+  flex: 1;
+  min-height: 0;
+  margin-top: 12rpx;
+}
+
+.library-item {
+  margin-bottom: 14rpx;
+  padding: 20rpx;
+  border: 2rpx solid #eeedf6;
+  border-radius: 16rpx;
+  background: #fbfaff;
+}
+
+.library-item-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+}
+
+.library-number {
+  flex-shrink: 0;
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+  background: #efe9fb;
+  color: #7a63bb;
+  font-size: 21rpx;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.library-name {
+  flex: 1;
+  min-width: 0;
+  color: #45405c;
+  font-size: 25rpx;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.library-reference {
+  display: block;
+  margin-top: 8rpx;
+  color: #9a94ad;
+  font-size: 20rpx;
+}
+
+.library-traits {
+  display: block;
+  margin-top: 8rpx;
+  color: #6c7086;
+  font-size: 21rpx;
+  line-height: 1.75;
+}
+
+.library-actions {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 16rpx;
+}
+
+.library-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  margin: 0;
+  padding: 10rpx 22rpx;
+  border: 2rpx solid #e4e3f2;
+  border-radius: 12rpx;
+  background: #fff;
+  color: #7a7d96;
+  font-size: 22rpx;
+  line-height: 1.4;
+}
+
+.library-action.primary {
+  border-color: #cfc3ea;
+  background: #f2edf9;
+  color: #7763b7;
+  font-weight: 600;
+}
+
+.library-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  margin: 6rpx 0 16rpx;
+  padding: 12rpx;
+  border: 2rpx dashed #ded6f4;
+  border-radius: 14rpx;
+  background: #fbfaff;
+  color: #8470b0;
+  font-size: 22rpx;
+  line-height: 1.4;
+}
+
+.library-empty {
+  padding: 40rpx 0;
+  color: #a0a2b6;
+  font-size: 22rpx;
+  text-align: center;
+}
+
+.library-foot {
+  display: block;
+  flex-shrink: 0;
+  margin-top: 14rpx;
+  color: #a0a2b6;
+  font-size: 19rpx;
+  line-height: 1.7;
 }
 
 /* ---------- 全屏预览 ---------- */

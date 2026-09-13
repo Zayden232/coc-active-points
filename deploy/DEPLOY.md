@@ -2623,6 +2623,62 @@ node tools/browser-page-check.mjs    # 28 PASS           页面级渲染巡检
 
 ---
 
+### 12.12 创作工坊「风格提示词库」：内置 261 种手绘风格提示词（2026-09-14，纯前端 / 未部署）
+
+**需求**：很多人不会描述画风，只能说出"可爱一点""文艺一点"。工坊里要能"挑一个编号 → 复制走"，
+拿去别的 AI 生成提示词或图片。内容整理自开源风格库 **yang0/handraw-style**（沿用其 A–G 分类）。
+
+**不涉及后端**：没有新接口、没有迁移、没有环境变量。**线上网页端按约定没有动，也没有重新部署**；
+这个功能随 App 打包生效，所以**必须重新打包 App** 才会带上（HBuilderX 导入 `app/dist/build/app`）。
+
+**数据**（`app/src/utils/handraw-styles.js`，约 74 KB 纯数据，由脚本生成、不手改）：
+
+```text
+来源      https://github.com/yang0/handraw-style 的 references/styles.json
+生成      node tools/generate-handraw-styles.mjs <上游仓库目录>
+分类      A 001–035(35)  B 036–054(19)  C 055–082(28)  D 083–123(41)
+          E 124–154(31)  F 155–200(46)  G 201–261(61)   共 261 条
+字段      number / group / reference(参考作者) / name(生图名称) / traits(核心视觉特征)
+缺口      编号 201–216 上游没有 traits(16 条) → 提示词用统一兜底句, 不留空白
+图片      只内嵌文字, 不打包上游 261 张参考图(体积以百 MB 计)
+```
+
+生成脚本自带校验：条目数不是 261、编号缺号/重复、分类区间与上游 `group` 前缀不一致
+**都会直接报错退出**，避免静默产出错数据。
+
+**页面**（`app/src/pages/workshop/workshop.vue` + `app/src/utils/handraw-prompt.js`）：
+
+```text
+入口      提示词卡片下方「风格提示词库 · 261 种手绘风格」
+弹层      主题(可选) + 搜索(编号/作者/风格名/特征) + A–G 分类页签(带条数) + 风格列表
+每条      编号 / 风格名 / 参考作者·分类 / 核心视觉特征 / 「填入提示词」/「复制画风」
+填入      已有主体描述就追加(不覆盖), 同画风不重复堆叠, 截断到 textarea 上限 1000 字,
+          并标记 promptSource='manual'(东方幻境不再要求重新整理)
+复制      编号 + 风格名 + 参考作者 + 核心特征 + 主题 + 使用说明 + 英文风格名 → 剪贴板
+性能      列表分批渲染(首批 30 条 + 「继续显示」), 避免原生 App 一次渲染 261 个卡片
+```
+
+**验证**：
+
+```bash
+node tools/handraw-library-flow.mjs     # 123 PASS / 0 FAIL  数据完整性 + 过滤/文案 + 页面接线
+node tools/handraw-library-ui-check.mjs # 31 PASS / 0 FAIL   真浏览器+真点击(含把剪贴板读回来核对文案)
+node tools/check-app-bundle.mjs         # 43 项               产物断言(风格库相关 10 项)
+node tools/workshop-oriental-flow.mjs   # 32 PASS             东方幻境未被破坏
+```
+
+`tools/cdp-run.mjs` 这次修了两个通用问题，以后的 UI 检查都会受益：
+
+1. **横向 `scroll-view` 里的元素要先 `scrollIntoView` 再点** —— 否则元素在视口外，
+   算出来的坐标会大于视口宽度（实测 G 类页签在 x=463 而视口只有 430），点击直接落空；
+2. **给页面授予剪贴板读写权限**（`Browser.grantPermissions`）—— 否则 `navigator.clipboard.readText()`
+   会以"权限被拒"失败，"复制"类功能就只能靠页面自己弹的提示语来判断成败了。
+
+> 只内嵌文字这一点是有意的：上游的 261 张参考图（拼图 + 单图）合计 200 MB 以上，
+> App 里放不下，也没必要 —— 风格名 + 核心特征是这套提示词真正有用的部分。
+
+---
+
 ## 附：产物版本对照（回滚用）
 
 本机 `.e2e-logs/` 保留了每次部署的打包产物（均为 tar.gz，解包到对应目录即可回滚）。
