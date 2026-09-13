@@ -1,0 +1,32 @@
+{
+  "name": "coc-points-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "dev:db": "node scripts/dev-db.mjs",
+    "dev:db:reset": "node scripts/dev-db.mjs --reset",
+    "dev:db:check": "node scripts/dev-db.mjs --check",
+    "db:pull": "node scripts/dev-db-pull.mjs",
+    "test": "node scripts/test-cycle.mjs",
+    "test:e2e": "node scripts/e2e-run.mjs",
+    "test:ai": "node scripts/test-ai-workshop.mjs",
+    "user:init-super-admin": "node scripts/admin-cli.mjs init",
+    "user:reset-password": "node scripts/admin-cli.mjs reset",
+    "user:delete": "node scripts/admin-cli.mjs delete",
+    "user:list": "node scripts/admin-cli.mjs list"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.3.0",
+    "mysql2": "^3.11.0",
+    "sharp": "^0.35.4"
+  }
+}

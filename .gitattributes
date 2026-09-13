@@ -1,0 +1,28 @@
+# 换行统一: 仓库里一律存 LF, 避免 Windows 工作区把 CRLF 提交上去
+# (最重要的一条: shell 脚本若带 CRLF, 传到 Linux 上会 "bad interpreter: /bin/bash^M")
+* text=auto
+
+*.sh    text eol=lf
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.cjs   text eol=lf
+*.json  text eol=lf
+*.vue   text eol=lf
+*.css   text eol=lf
+*.md    text eol=lf
+*.sql   text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.conf  text eol=lf
+*.service text eol=lf
+
+# 二进制文件别做任何换行转换
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.webp  binary
+*.gif   binary
+*.ico   binary
+*.ttf   binary
+*.woff  binary
+*.woff2 binary

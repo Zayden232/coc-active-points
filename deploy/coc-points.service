@@ -1,0 +1,15 @@
+[Unit]
+Description=coc-points backend (部落活跃积分管理)
+After=network.target mysql.service
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/coc-points/server
+EnvironmentFile=/opt/coc-points/server/.env
+ExecStart=/usr/bin/node src/server.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
