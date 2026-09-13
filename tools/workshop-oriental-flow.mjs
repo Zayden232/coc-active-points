@@ -124,6 +124,7 @@ export const HANDRAW_SOURCE = { repo: '' };
 export function countByGroup() { return {}; }
 export function filterStyles() { return []; }
 export function stylePhrase() { return ''; }
+export function styleThumbPath() { return ''; }
 export function buildStylePrompt() { return ''; }
 `;
 

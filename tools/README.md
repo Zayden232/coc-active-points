@@ -33,6 +33,7 @@ cd app && npm install
 | `print-oriental-prompt.mjs` | 打印「东方幻境」默认值生成出来的完整提示词，便于人眼核对 |
 | `audit-for-publish.mjs` | 发布前审计：只扫 **git 会提交的文件**，看有没有密钥/口令/私钥/IP 混进去 |
 | `generate-handraw-styles.mjs <上游目录>` | 从 `yang0/handraw-style` 的 `styles.json` 生成 `app/src/utils/handraw-styles.js`（261 条 / 7 类；编号或分类对不上就报错退出） |
+| `build-handraw-thumbs.mjs <上游目录>` | 从上游单图生成 `app/src/static/style-thumbs/*.webp`（320px、约 4 MB；该目录被 `.gitignore` 排除，第三方插画不进仓库） |
 
 ```bash
 node tools/md-check.mjs
@@ -59,7 +60,7 @@ node tools/audit-for-publish.mjs
 | `workshop-oriental-flow.mjs` | 32 | 东方幻境：直接自己写提示词也能生成、默认服装 |
 | `wheel-guest-flow.mjs` | 21 | 转盘每日奖励：访客也能抽、只读门禁已删干净 |
 | `wheel-fun-pick-flow.mjs` | 77 | 随机抽人自选成员：按本周分数分组、整组选中、只从勾选名单里抽 |
-| `handraw-library-flow.mjs` | 123 | 工坊「风格提示词库」：261 条数据完整性、过滤与文案、页面接线（分类切换/分批渲染/追加不覆盖/剪贴板） |
+| `handraw-library-flow.mjs` | 174 | 工坊「风格提示词库」：261 条数据完整性、过滤与文案、页面接线（分类短名/分批渲染/追加不覆盖/复制反馈/参考图） |
 | `star-paste-roster.json` | — | 上面几个脚本用到的成员名单数据 |
 
 ```bash
@@ -72,10 +73,10 @@ node tools/workshop-oriental-flow.mjs
 
 | 脚本 | 验证什么 |
 |---|---|
-| `cdp-run.mjs` | 通用驱动：headless Chrome + CDP，按顺序执行 `{click}/{clickText}/{js}/{shot}/{wait}` 步骤，读计算后的布局、截图、输出 JSON（点击前会先把元素滚进视口，并给页面授予剪贴板读写权限） |
+| `cdp-run.mjs` | 通用驱动：headless Chrome + CDP，按顺序执行 `{click}/{clickText}/{insertText}/{js}/{shot}/{wait}` 步骤，读计算后的布局、截图、输出 JSON（点击前会先把元素滚进视口，并给页面授予剪贴板读写权限） |
 | `browser-page-check.mjs` | 真渲染巡检 6 个页面：DOM 里不允许出现真实 `<template>`、节点数达标、关键文案可见 |
 | `wheel-fun-ui-check.mjs` | 真点击：切「随机抽人」→「自选成员」→ 点分数整组选中，断言计数/按钮状态/无横向溢出 |
-| `handraw-library-ui-check.mjs` | 真点击：开「风格提示词库」→ 切 G 类 → 继续显示 → 复制画风（把剪贴板读回来核对文案）/填入提示词 |
+| `handraw-library-ui-check.mjs` | 真点击 + **真键盘输入**：开「风格提示词库」→ 输入 041 → 切分类 → 复制（断言提示真在屏幕最上层，并把剪贴板读回来核对）/点参考图看大图/填入提示词 |
 | `dev-server-page-check.mjs` | 运行中的 dev server 能否正常编译改动后的页面 |
 | `serve-dist.mjs` | 极简静态服务器，给 `uni build` 产物起个可截图的服务 |
 
@@ -93,6 +94,9 @@ node tools/dev-server-page-check.mjs http://localhost:5173 /src/pages/wheel/whee
 > 2. `cdp-run.mjs` 用 `Emulation.setDeviceMetricsOverride` 覆盖视口：headless 的 `--window-size` **不等于**
 >    页面 CSS 视口（实测 `--window-size=430` 时 `innerWidth` 是 512），不覆盖的话截图会是
 >    "布局按 512 排、图片只有 430 宽"，看起来像右侧被切掉。
+> 3. **uni-app 的 `input` 必须给显式高度**：组件内部那个真 `<input>` 是 `height: 100%`，
+>    父级高度 auto 时会被算成 **0 高**（H5 实测 `innerHeight=0`），表现为"框看着在、点进去打不了字"。
+>    `handraw-library-ui-check.mjs` 用 `{insertText:{selector,text}}` 真键盘输入来防这个回归。
 
 ## 四、需要真实生图额度（会花钱，默认别跑）
 

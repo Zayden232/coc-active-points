@@ -288,7 +288,18 @@ try {
       checkEq(`${id} 结束编号`, group.to, to);
       checkEq(`${id} 条数`, group.count, count);
       checkEq(`${id} 实时统计`, handraw.countByGroup()[id], count);
+      check(
+        typeof group.short === 'string' && group.short.includes('·') && group.short.length <= 14,
+        `${id} 有页面用的短名(两个关键词):${group.short}`
+      );
+      checkEq(`${id} groupLabel`, handraw.groupLabel(id), `${id} · ${group.short}（${from}–${to}）`);
+      checkEq(`${id} groupShort`, handraw.groupShort(id), group.short);
     }
+    checkEq(
+      '分类短名没有重复',
+      new Set(handraw.HANDRAW_GROUPS.map((g) => g.short)).size,
+      7
+    );
 
     const numbers = handraw.HANDRAW_STYLES.map((s) => s.number);
     checkEq('编号无重复', new Set(numbers).size, 261);
@@ -326,7 +337,9 @@ try {
       '关键词按作者名(不区分大小写)命中 001'
     );
     check(handraw.filterStyles({ keyword: '水彩' }).length > 0, '关键词能搜中文特征(水彩)');
-    check(handraw.filterStyles({ keyword: '国际社论' }).length === 35, '关键词能搜分类名');
+    check(handraw.filterStyles({ keyword: '国际社论' }).length === 35, '关键词能搜分类全名');
+    check(handraw.filterStyles({ keyword: '水墨国风' }).length === 31, '关键词能搜分类短名');
+    check(handraw.filterStyles({ keyword: '治愈绘本' }).length === 61, '短名(两个关键词)也能搜');
     checkEq('搜不到就是空', handraw.filterStyles({ keyword: 'zzzz-不存在' }).length, 0);
 
     checkEq('findStyle("001") 的名字', handraw.findStyle('001').name, 'Playful Deadpan Doodle');
@@ -339,27 +352,32 @@ try {
     check(phrase.includes(`参考 ${s41.reference}`), '填入短语带参考作者');
     check(phrase.includes(s41.traits.slice(0, 12)), '填入短语带核心特征');
 
-    const copy = handraw.buildStylePrompt(s41, '秋天的第一杯奶茶');
+    const copy = handraw.buildStylePrompt(s41);
     check(copy.includes(`【手绘风格 041 · ${s41.name}】`), '复制文案带编号与风格名');
     check(copy.includes(`参考作者：${s41.reference}`), '复制文案带参考作者');
-    check(copy.includes('主题：秋天的第一杯奶茶'), '复制文案带主题');
+    check(copy.includes('核心视觉特征：'), '复制文案带核心特征');
+    check(copy.includes('主题：'), '复制文案留了主题那一行');
     check(copy.includes('English style hint'), '复制文案带英文风格名(给英文模型)');
     check(
-      handraw.buildStylePrompt(s41, '').includes(handraw.HANDRAW_THEME_PLACEHOLDER),
-      '主题留空时写占位提示'
+      handraw.buildStylePrompt(s41).includes(handraw.HANDRAW_THEME_PLACEHOLDER),
+      '主题留占位提示(弹层里不再单独问主题)'
     );
-    check(
-      !handraw.buildStylePrompt(s41, '').includes('undefined'),
-      '复制文案里不出现 undefined'
-    );
+    check(!handraw.buildStylePrompt(s41).includes('undefined'), '复制文案里不出现 undefined');
+
+    // 参考图路径: 页面用它拼 <image src>
+    checkEq('styleThumbPath("041")', handraw.styleThumbPath('041'), '/static/style-thumbs/041.webp');
+    checkEq('styleThumbPath(1) 也能补零', handraw.styleThumbPath(1), '/static/style-thumbs/001.webp');
+    checkEq('styleThumbPath("12") 补成 012', handraw.styleThumbPath('12'), '/static/style-thumbs/012.webp');
+    checkEq('styleThumbPath 非法输入返回空', handraw.styleThumbPath('abc'), '');
+    checkEq('styleThumbPath 空值返回空', handraw.styleThumbPath(null), '');
 
     const s201 = handraw.findStyle('201');
     checkEq('201 确实没有核心特征', s201.traits, '');
     check(
-      handraw.buildStylePrompt(s201, '').includes(handraw.HANDRAW_TRAITS_FALLBACK),
+      handraw.buildStylePrompt(s201).includes(handraw.HANDRAW_TRAITS_FALLBACK),
       '无特征的条目用兜底句, 不是空白'
     );
-    check(handraw.buildStylePrompt(s201, '').includes('阿梗'), '201 仍然带参考作者');
+    check(handraw.buildStylePrompt(s201).includes('阿梗'), '201 仍然带参考作者');
   }
 
   section('3. 页面接线: 打开 / 过滤 / 分批');
@@ -391,7 +409,7 @@ try {
       'D 类里只有 D 类的条目'
     );
     checkEq('切分类后回到第一批(30)', inst.styleLimit, 30);
-    check(inst.styleGroupName.startsWith('D · 日本作者'), '分类名展示完整标题');
+    check(inst.styleGroupName.startsWith('D · 日系日常'), `分类名展示短名:「${inst.styleGroupName}」`);
 
     inst.pickStyleGroup('D');
     await nextTick();
@@ -400,12 +418,20 @@ try {
 
     inst.pickStyleGroup('G');
     inst.styleKeyword = '216';
-    inst.resetStyleList();
+    await nextTick();
     await nextTick();
     checkEq('分类 + 关键词一起生效', inst.styleMatches.length, 1);
     checkEq('命中的是 216', inst.styleMatches[0].number, '216');
-    checkEq('搜索后回到第一批', inst.styleLimit, 30);
+    checkEq('搜索后回到第一批(搜索词由 watch 重置分页)', inst.styleLimit, 30);
     checkEq('搜索后可以看到全部结果', inst.styleVisible.length, 1);
+
+    // 搜索词清空后分页也回到 30
+    inst.showMoreStyles();
+    await nextTick();
+    checkEq('先展开到 60', inst.styleLimit, 60);
+    inst.styleKeyword = '04';
+    await nextTick();
+    checkEq('换关键词后回到第一批(30)', inst.styleLimit, 30);
 
     inst.pickStyleGroup('G');
     inst.styleKeyword = '';
@@ -482,58 +508,98 @@ try {
     check(filled.length > 20, '填入的短语不是空串');
   }
 
-  section('5. 复制画风到其它 AI');
+  section('5. 复制画风到其它 AI（弹层里必须看得见反馈）');
   {
     stub.clipboard.length = 0;
+    stub.toasts.length = 0;
     const style = handraw.findStyle('010');
 
-    inst.styleTheme = '';
     inst.copyStylePrompt(style);
     checkEq('复制走的是剪贴板接口', stub.clipboard.length, 1);
     const text = stub.clipboard[0] || '';
     check(text.includes('【手绘风格 010 · Geometric Literary Deadpan】'), '复制的文案带编号与风格名');
     check(text.includes('参考作者：Tom Gauld'), '复制的文案带参考作者');
     check(text.includes('核心视觉特征：'), '复制的文案带核心特征');
-    check(text.includes(handraw.HANDRAW_THEME_PLACEHOLDER), '没填主题时是占位提示');
-
-    inst.styleTheme = '大唐夜宴';
-    inst.copyStylePrompt(style);
-    checkEq('再复制一次', stub.clipboard.length, 2);
+    check(text.includes(handraw.HANDRAW_THEME_PLACEHOLDER), '主题那行是占位提示');
+    checkEq('记下"刚复制的是哪一条"(按钮要变「已复制 ✓」)', inst.styleCopied, '010');
     check(
-      (stub.clipboard[1] || '').includes('主题：大唐夜宴'),
-      '主题输入框的内容会写进复制文案'
+      inst.styleCopiedText.includes('已复制到剪贴板') && inst.styleCopiedText.includes('010'),
+      `弹层里有可见的复制提示:「${inst.styleCopiedText}」`
     );
-    check(
-      stub.toasts.some((t) => t.includes('010')),
-      '复制后有提示(带编号)'
-    );
+    inst.clearCopyFeedback();
+    checkEq('提示可以清掉', inst.styleCopiedText, '');
 
-    // 没有剪贴板能力时给出可操作提示, 而不是静默失败
+    // 换一条复制: 反馈跟着换过去
+    inst.copyStylePrompt(handraw.findStyle('011'));
+    checkEq('反馈换成新的编号', inst.styleCopied, '011');
+    check(!inst.styleCopiedText.includes('010'), '上一条的提示不残留');
+
+    // 没有剪贴板能力时也要给出可操作提示, 而不是静默失败
     const keep = globalThis.uni.setClipboardData;
     delete globalThis.uni.setClipboardData;
+    inst.clearCopyFeedback();
     inst.copyStylePrompt(style);
-    check(
-      stub.toasts.some((t) => t.includes('长按')),
-      '剪贴板不可用时提示手动复制'
-    );
+    check(inst.styleCopiedText.includes('长按'), '剪贴板不可用时提示手动复制');
     globalThis.uni.setClipboardData = keep;
+    inst.clearCopyFeedback();
   }
 
-  section('6. 模板接线(改动都在页面上, 不依赖后端)');
+  section('6. 参考图（缩略图 + 点开大图）');
+  {
+    checkEq('缩略图路径', inst.styleThumb('001'), '/static/style-thumbs/001.webp');
+    checkEq('缺图编号不会拼出路径', inst.styleThumb('nope'), '');
+
+    const item = handraw.findStyle('001');
+    checkEq('初始没有大图预览', inst.stylePreview, null);
+    inst.previewStyle(item);
+    check(inst.stylePreview && inst.stylePreview.url.endsWith('/001.webp'), '点缩略图打开大图');
+    checkEq('大图标题用编号', inst.stylePreview.number, '001');
+    inst.closeStylePreview();
+    checkEq('关掉大图', inst.stylePreview, null);
+
+    // 图不存在时(没跑生成脚本)不弹大图
+    inst.onStyleThumbError('001');
+    checkEq('加载失败被记下', inst.styleThumbBroken['001'], true);
+    inst.previewStyle(item);
+    checkEq('加载失败的条目不再弹大图', inst.stylePreview, null);
+    inst.styleThumbBroken = {};
+  }
+
+  section('7. 模板接线(改动都在页面上, 不依赖后端)');
   {
     const src = fs.readFileSync(pageFile, 'utf8');
     check(/@click="openStyleLibrary"/.test(src), '提示词卡片里有「风格提示词库」入口');
     check(/v-if="styleLibraryOpen"/.test(src), '弹层用 v-if 控制');
     check(/v-for="item in styleVisible"/.test(src), '列表按 styleVisible 分批渲染');
     check(/@click="pickStyleGroup\(group\.id\)"/.test(src), '分类页签可点');
-    check(/@input="resetStyleList"/.test(src), '搜索框输入后重置分页');
+    check(/group\.short/.test(src), '分类页签显示短名(两个代表子风格的关键词)');
+    check(/library-tab-id/.test(src), '分类字母做成小角标');
     check(/@click="useStylePrompt\(item\)"/.test(src), '每条的「填入提示词」按钮');
     check(/@click="copyStylePrompt\(item\)"/.test(src), '每条的「复制画风」按钮');
-    check(/v-model="styleTheme"/.test(src), '主题输入框绑定 styleTheme');
     check(/v-model="styleKeyword"/.test(src), '搜索框绑定 styleKeyword');
     check(src.includes('style-entry-hint'), '入口下面有用法说明');
     check(/yang0\/handraw-style/.test(src), '弹层底部标了数据来源(第三方数据要署名)');
     check(!/^\s*<block>\s*$/m.test(src), '没有裸 <block>(会被编译成 <template>, 子节点不渲染)');
+
+    // 这次修的两个问题
+    check(!src.includes('styleTheme'), '主题输入框已去掉(只留一个搜索框)');
+    check(
+      !/@input="resetStyleList"/.test(src),
+      'input 上不再挂 @input(与 v-model 同时挂在 App 端会导致打不进字)'
+    );
+    check(
+      /styleKeyword\(\)\s*\{\s*this\.styleLimit = 30;\s*\}/.test(src),
+      '改用 watch(styleKeyword) 重置分页'
+    );
+    check(/v-if="styleCopiedText"/.test(src), '复制反馈在弹层里可见');
+    check(/:class="\{ copied: styleCopied === item\.number \}"/.test(src), '复制的按钮会变成「已复制」');
+    check(/:src="styleThumb\(item\.number\)"/.test(src), '列表里挂了参考图');
+    check(/@click="previewStyle\(item\)"/.test(src), '点参考图可放大');
+    check(/v-if="stylePreview"/.test(src), '大图弹层层级独立');
+    check(
+      !/uni\.showToast\(\{[^}]*已复制/.test(src),
+      '复制反馈不依赖 showToast(它的层级比弹层低, 会被挡住)'
+    );
   }
 } finally {
   fs.rmSync(tmpDir, { recursive: true, force: true });

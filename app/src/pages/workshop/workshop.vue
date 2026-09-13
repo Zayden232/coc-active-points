@@ -711,20 +711,12 @@
           <button class="library-close" @click="closeStyleLibrary">×</button>
         </view>
 
-        <text class="library-field-label">主题（可选，会写进复制的内容）</text>
-        <input
-          v-model="styleTheme"
-          class="library-input"
-          maxlength="80"
-          placeholder="例如：秋天的第一杯奶茶"
-        />
-
+        <text class="library-field-label">按编号找风格（也可以搜作者、风格名或特征）</text>
         <input
           v-model="styleKeyword"
           class="library-input library-search"
-          maxlength="40"
-          placeholder="搜索编号 / 作者 / 风格名：041、水彩、绘本…"
-          @input="resetStyleList"
+          maxlength="24"
+          placeholder="例如 041、水彩、绘本…"
         />
 
         <scroll-view scroll-x class="library-tabs">
@@ -742,28 +734,53 @@
             :class="{ active: styleGroup === group.id }"
             @click="pickStyleGroup(group.id)"
           >
-            {{ group.id }} {{ group.count }}
+            <text class="library-tab-id">{{ group.id }}</text>
+            <text>{{ group.short }} {{ group.count }}</text>
           </view>
         </scroll-view>
 
         <text class="library-group-name">{{ styleGroupName }}</text>
 
+        <text v-if="styleCopiedText" class="library-status">✓ {{ styleCopiedText }}</text>
+
         <scroll-view scroll-y class="library-list">
           <view v-for="item in styleVisible" :key="item.number" class="library-item">
-            <view class="library-item-head">
-              <text class="library-number">{{ item.number }}</text>
-              <text class="library-name">{{ item.name }}</text>
+            <view class="library-item-main">
+              <view class="library-thumb-box" @click="previewStyle(item)">
+                <image
+                  v-if="!styleThumbBroken[item.number]"
+                  class="library-thumb"
+                  :src="styleThumb(item.number)"
+                  mode="aspectFill"
+                  @error="onStyleThumbError(item.number)"
+                />
+                <text v-else class="library-thumb-fallback">{{ item.number }}</text>
+              </view>
+
+              <view class="library-item-text">
+                <view class="library-item-head">
+                  <text class="library-number">{{ item.number }}</text>
+                  <text class="library-name">{{ item.name }}</text>
+                </view>
+                <text class="library-reference">
+                  参考 {{ item.reference }} · 分类 {{ item.group }}
+                </text>
+                <text class="library-traits">
+                  {{ item.traits || '上游未提供核心特征，直接用作者名 + 风格名描述即可。' }}
+                </text>
+              </view>
             </view>
-            <text class="library-reference">参考 {{ item.reference }} · 分类 {{ item.group }}</text>
-            <text class="library-traits">
-              {{ item.traits || '上游未提供核心特征，直接用作者名 + 风格名描述即可。' }}
-            </text>
+
             <view class="library-actions">
               <button class="library-action" @click="useStylePrompt(item)">
                 填入提示词
               </button>
-              <button class="library-action primary" @click="copyStylePrompt(item)">
-                复制画风
+              <button
+                class="library-action primary"
+                :class="{ copied: styleCopied === item.number }"
+                @click="copyStylePrompt(item)"
+              >
+                {{ styleCopied === item.number ? '已复制 ✓' : '复制画风' }}
               </button>
             </view>
           </view>
@@ -778,9 +795,23 @@
         </scroll-view>
 
         <text class="library-foot">
-          风格数据整理自 GitHub yang0/handraw-style。复制内容含编号、风格名、参考作者与核心视觉特征，
-          粘到其它 AI 即可让它按这个画风出提示词或出图。
+          风格数据与参考图来自 GitHub yang0/handraw-style（点图片可放大）。
+          复制内容含编号、风格名、参考作者与核心视觉特征，粘到其它 AI 即可让它按这个画风出提示词或出图。
         </text>
+      </view>
+    </view>
+
+    <!-- 风格参考图大图 -->
+    <view v-if="stylePreview" class="style-viewer" @click="closeStylePreview">
+      <view class="style-viewer-panel" @click.stop>
+        <image class="style-viewer-image" :src="stylePreview.url" mode="widthFix" />
+        <view class="style-viewer-meta">
+          <text class="style-viewer-title">{{ stylePreview.number }} · {{ stylePreview.name }}</text>
+          <text class="style-viewer-sub">
+            参考 {{ stylePreview.reference }} · 分类 {{ stylePreview.group }}
+          </text>
+        </view>
+        <button class="style-viewer-close" @click="closeStylePreview">关闭</button>
       </view>
     </view>
   </view>
@@ -840,6 +871,7 @@ import {
   countByGroup,
   filterStyles,
   stylePhrase,
+  styleThumbPath,
   buildStylePrompt,
 } from '@/utils/handraw-prompt';
 
@@ -922,11 +954,17 @@ export default {
       styleLibraryOpen: false,
       styleKeyword: '',
       styleGroup: '',
-      styleTheme: '',
       // 列表分批渲染(261 条一次全渲染在原生 App 上偏重)
       styleLimit: 30,
       styleGroups: HANDRAW_GROUPS,
       styleTotal: HANDRAW_TOTAL,
+      // 复制反馈(uni.showToast 会被这个弹层挡住, 所以自己给看得见的反馈)
+      styleCopied: '',
+      styleCopiedText: '',
+      styleCopyTimer: null,
+      // 风格参考图的大图预览 + 加载失败的编号(缺图时隐藏)
+      stylePreview: null,
+      styleThumbBroken: {},
 
       active: false,
       pollTimer: null,
@@ -975,11 +1013,11 @@ export default {
       return Math.max(0, this.styleMatches.length - this.styleVisible.length);
     },
 
-    // 当前分类的完整名字(含编号区间)
+    // 当前分类的完整名字(短名 + 编号区间)
     styleGroupName() {
       if (!this.styleGroup) return '全部风格 · A–G';
       const group = this.styleGroupTabs.find((item) => item.id === this.styleGroup);
-      return group ? `${group.id} · ${group.name}（${group.from}–${group.to}）` : '';
+      return group ? `${group.id} · ${group.short}（${group.from}–${group.to}）` : '';
     },
 
     // 额度文案: 管理员不限制(服务端回 daily_unlimited), 非管理员显示 x/10
@@ -1028,6 +1066,11 @@ export default {
       handler() {
         this.orientalConfigRevision += 1;
       },
+    },
+    // 搜索词一变就回到第一批(不用挂在 input 的 @input 上:
+    // 同一个 input 上 v-model + @input 在 App 端会互相打架, 表现为"打字打不进去")
+    styleKeyword() {
+      this.styleLimit = 30;
     },
   },
 
@@ -1170,6 +1213,7 @@ export default {
 
     closeStyleLibrary() {
       this.styleLibraryOpen = false;
+      this.clearCopyFeedback();
     },
 
     pickStyleGroup(id) {
@@ -1187,6 +1231,32 @@ export default {
       this.styleLimit += 30;
     },
 
+    // ---------- 风格参考图 ----------
+    styleThumb(number) {
+      return styleThumbPath(number);
+    },
+
+    // 缩略图没生成(没跑 tools/build-handraw-thumbs.mjs)时不显示破图
+    onStyleThumbError(number) {
+      this.styleThumbBroken = { ...this.styleThumbBroken, [number]: true };
+    },
+
+    previewStyle(item) {
+      const url = this.styleThumb(item.number);
+      if (!url || this.styleThumbBroken[item.number]) return;
+      this.stylePreview = {
+        url,
+        number: item.number,
+        name: item.name,
+        reference: item.reference,
+        group: item.group,
+      };
+    },
+
+    closeStylePreview() {
+      this.stylePreview = null;
+    },
+
     /**
      * 填进本页提示词框。
      * 已经有内容就把画风追加在后面(工坊本来就建议"主体 + 风格 + 场景"),
@@ -1202,20 +1272,42 @@ export default {
       // 这是用户挑定的最终文字, 按"自己写的"处理(东方幻境不再要求重新整理)
       this.promptSource = 'manual';
       this.styleLibraryOpen = false;
+      this.clearCopyFeedback();
       this.toast(`已填入风格 ${style.number}`);
+    },
+
+    clearCopyFeedback() {
+      if (this.styleCopyTimer) {
+        clearTimeout(this.styleCopyTimer);
+        this.styleCopyTimer = null;
+      }
+      this.styleCopied = '';
+      this.styleCopiedText = '';
+    },
+
+    // 复制成功/失败都写在弹层里(uni.showToast 的层级比这个弹层低, 会被挡住看不见)
+    showCopyFeedback(number, text) {
+      this.clearCopyFeedback();
+      this.styleCopied = number;
+      this.styleCopiedText = text;
+      this.styleCopyTimer = setTimeout(() => {
+        this.styleCopied = '';
+        this.styleCopiedText = '';
+        this.styleCopyTimer = null;
+      }, 4000);
     },
 
     // 复制完整画风文案, 粘到别的 AI 里让它出提示词或出图
     copyStylePrompt(style) {
-      const data = buildStylePrompt(style, this.styleTheme);
+      const data = buildStylePrompt(style);
       if (typeof uni.setClipboardData !== 'function') {
-        this.toast('请长按上方文字手动复制');
+        this.showCopyFeedback(style.number, `请长按下面的文字手动复制（${style.number}）`);
         return;
       }
       uni.setClipboardData({
         data,
-        success: () => this.toast(`风格 ${style.number} 已复制`),
-        fail: () => this.toast('复制失败，请长按文字手动复制'),
+        success: () => this.showCopyFeedback(style.number, `风格 ${style.number} 已复制到剪贴板，粘到其它 AI 就能用`),
+        fail: () => this.showCopyFeedback(style.number, '复制失败，请长按文字手动复制'),
       });
     },
 
@@ -3047,9 +3139,12 @@ button[disabled] {
 .library-input {
   flex-shrink: 0;
   width: 100%;
+  /* 注意: uni-app 的 input 必须给显式高度 —— 内部那个真 <input> 是 height:100%,
+     父级高度 auto 时会被算成 0, 结果"框看着在、点进去打不了字"(H5 实测 innerHeight=0)。 */
+  height: 88rpx;
   box-sizing: border-box;
   margin-top: 10rpx;
-  padding: 16rpx 18rpx;
+  padding: 0 20rpx;
   border: 2rpx solid #e8eaf2;
   border-radius: 12rpx;
   background: #fafbfe;
@@ -3080,6 +3175,19 @@ button[disabled] {
   font-size: 22rpx;
 }
 
+/* 分类字母做成小角标(分类名本身用两个代表子风格的关键词) */
+.library-tab-id {
+  margin-right: 8rpx;
+  color: #a9a2c4;
+  font-size: 19rpx;
+  font-weight: 600;
+  letter-spacing: 1rpx;
+}
+
+.library-tab.active .library-tab-id {
+  color: #8470b0;
+}
+
 .library-tab.active {
   border-color: #d4ccf3;
   background: #f0ebfd;
@@ -3101,12 +3209,61 @@ button[disabled] {
   margin-top: 12rpx;
 }
 
+/* 复制反馈: 弹层比 uni.showToast 层级高, 所以反馈就写在弹层里 */
+.library-status {
+  display: block;
+  flex-shrink: 0;
+  margin-top: 12rpx;
+  padding: 12rpx 18rpx;
+  border-radius: 12rpx;
+  background: #eef7f0;
+  color: #3f7a51;
+  font-size: 21rpx;
+  line-height: 1.5;
+}
+
 .library-item {
   margin-bottom: 14rpx;
   padding: 20rpx;
   border: 2rpx solid #eeedf6;
   border-radius: 16rpx;
   background: #fbfaff;
+}
+
+.library-item-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 18rpx;
+}
+
+.library-thumb-box {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 150rpx;
+  height: 150rpx;
+  overflow: hidden;
+  border: 2rpx solid #eceaf6;
+  border-radius: 14rpx;
+  background: #f4f2fb;
+}
+
+.library-thumb {
+  width: 100%;
+  height: 100%;
+}
+
+.library-thumb-fallback {
+  color: #b3aecd;
+  font-size: 30rpx;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.library-item-text {
+  flex: 1;
+  min-width: 0;
 }
 
 .library-item-head {
@@ -3178,6 +3335,12 @@ button[disabled] {
   font-weight: 600;
 }
 
+.library-action.primary.copied {
+  border-color: #a9d3b6;
+  background: #eaf7ee;
+  color: #3f7a51;
+}
+
 .library-more {
   display: flex;
   align-items: center;
@@ -3207,6 +3370,71 @@ button[disabled] {
   color: #a0a2b6;
   font-size: 19rpx;
   line-height: 1.7;
+}
+
+/* ---------- 风格参考图大图 ---------- */
+.style-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 32rpx;
+  background: rgba(20, 19, 31, .96);
+}
+
+.style-viewer-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 760px;
+  max-height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 24rpx;
+  border-radius: 22rpx;
+  background: #fff;
+}
+
+.style-viewer-image {
+  width: 100%;
+  border-radius: 16rpx;
+  background: #f4f2fb;
+}
+
+.style-viewer-meta {
+  margin-top: 18rpx;
+}
+
+.style-viewer-title {
+  display: block;
+  color: #3f3a55;
+  font-size: 27rpx;
+  font-weight: 600;
+}
+
+.style-viewer-sub {
+  display: block;
+  margin-top: 6rpx;
+  color: #9a94ad;
+  font-size: 20rpx;
+}
+
+.style-viewer-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  margin: 20rpx 0 0;
+  padding: 12rpx;
+  border: 2rpx solid #e4e3f2;
+  border-radius: 12rpx;
+  background: #fafbfe;
+  color: #7a7d96;
+  font-size: 24rpx;
+  line-height: 1.4;
 }
 
 /* ---------- 全屏预览 ---------- */

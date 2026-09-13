@@ -27,6 +27,10 @@ unpackage/
 # ===== 与本项目无关的临时产物 =====
 output/
 
+# ===== 第三方图片(风格库缩略图): 不进仓库, 用脚本从上游生成 =====
+# node tools/build-handraw-thumbs.mjs <handraw-style 仓库目录>
+app/src/static/style-thumbs/
+
 # ===== 编辑器 / 系统 / 临时文件 =====
 .vscode/
 .idea/

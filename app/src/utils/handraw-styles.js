@@ -17,9 +17,11 @@ export const HANDRAW_SOURCE = {
 };
 
 // id + 名称 + 编号区间；count 由生成脚本核对
+// short = 页面上的分类名(该类两个代表子风格的中文关键词)，name = 上游分类全名
 export const HANDRAW_GROUPS = [
   {
     id: 'A',
+    short: '极简线描·冷幽默',
     name: '国际社论漫画 / 幽默手绘',
     from: '001',
     to: '035',
@@ -27,6 +29,7 @@ export const HANDRAW_GROUPS = [
   },
   {
     id: 'B',
+    short: '墨线淡彩·绘本叙事',
     name: '国际绘本 / 叙事型手绘',
     from: '036',
     to: '054',
@@ -34,6 +37,7 @@ export const HANDRAW_GROUPS = [
   },
   {
     id: 'C',
+    short: '几何平面·负空间人物',
     name: '现代平面 / 艺术化人物体系',
     from: '055',
     to: '082',
@@ -41,6 +45,7 @@ export const HANDRAW_GROUPS = [
   },
   {
     id: 'D',
+    short: '日系日常·手绘线稿',
     name: '日本作者 / 当代插画体系',
     from: '083',
     to: '123',
@@ -48,6 +53,7 @@ export const HANDRAW_GROUPS = [
   },
   {
     id: 'E',
+    short: '水墨国风·东方幻想',
     name: '中国作者 / 当代插画体系',
     from: '124',
     to: '154',
@@ -55,6 +61,7 @@ export const HANDRAW_GROUPS = [
   },
   {
     id: 'F',
+    short: '网感涂鸦·单线孔版',
     name: '通用网感 / 媒介 / 地域手绘',
     from: '155',
     to: '200',
@@ -62,6 +69,7 @@ export const HANDRAW_GROUPS = [
   },
   {
     id: 'G',
+    short: '治愈绘本·质感拼贴',
     name: '附件新增 / 当代插画补充',
     from: '201',
     to: '261',

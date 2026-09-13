@@ -23,11 +23,34 @@ export function groupById(id) {
   return HANDRAW_GROUPS.find((item) => item.id === id) || null;
 }
 
-// 分类标题: "A · 国际社论漫画 / 幽默手绘"
+// 风格参考图(缩略图)在 App 里的位置。图不是版本库内容，由
+// tools/build-handraw-thumbs.mjs 从上游仓库生成；缺图时页面会自己隐藏缩略图。
+export const HANDRAW_THUMB_BASE = '/static/style-thumbs';
+
+export function styleThumbPath(number) {
+  const value = String(number == null ? '' : number).trim();
+  if (!/^\d{1,3}$/.test(value)) return '';
+  return `${HANDRAW_THUMB_BASE}/${value.padStart(3, '0')}.webp`;
+}
+
+// 分类在页面上的名字: 取该类两个最有代表性的子风格提炼出来的中文关键词
+export function groupShort(id) {
+  const group = groupById(id);
+  return group ? group.short : id || '';
+}
+
+// 分类完整标题(上游全名): "A · 国际社论漫画 / 幽默手绘"
 export function groupTitle(id) {
   const group = groupById(id);
   if (!group) return id || '';
   return `${group.id} · ${group.name}`;
+}
+
+// 页面上的分类标题: "A · 极简线描·冷幽默（001–035）"
+export function groupLabel(id) {
+  const group = groupById(id);
+  if (!group) return id || '';
+  return `${group.id} · ${group.short}（${group.from}–${group.to}）`;
 }
 
 // 每个分类的条目数（与数据里的 count 一致）
@@ -45,10 +68,11 @@ function normalize(text) {
 
 function matches(style, keyword) {
   if (!keyword) return true;
+  const group = groupById(style.group);
   const haystack = [
     style.number,
     style.group,
-    groupTitle(style.group),
+    group ? `${group.short} ${group.name}` : '',
     style.reference,
     style.name,
     style.traits,
@@ -102,23 +126,24 @@ export function stylePhrase(style) {
     : `手绘风格「${style.name}」`;
 }
 
-function themeLine(theme) {
-  const text = String(theme == null ? '' : theme).trim();
-  return text || HANDRAW_THEME_PLACEHOLDER;
+function themeLine() {
+  // 工坊里不再单独要主题(一个搜索框就够了): 复制出去后主题由用户在目标 AI 里自己填,
+  // 这里留一句占位提示, 免得拿到文案不知道要补什么。
+  return HANDRAW_THEME_PLACEHOLDER;
 }
 
 /**
- * 复制给其它 AI 的完整文案：画风 + 主题 + 一句使用说明。
+ * 复制给其它 AI 的完整文案：画风 + 主题占位 + 一句使用说明。
  * 上游 Skill 的用法是「编号 + 主题」→ 中英文提示词，这里把编号/作者/特征一次给全。
  */
-export function buildStylePrompt(style, theme) {
+export function buildStylePrompt(style) {
   if (!style) return '';
   const traits = traitsOf(style) || HANDRAW_TRAITS_FALLBACK;
   const lines = [
     `【手绘风格 ${style.number} · ${style.name}】`,
     `参考作者：${style.reference}`,
     `核心视觉特征：${traits}`,
-    `主题：${themeLine(theme)}`,
+    `主题：${themeLine()}`,
     '',
     '请用这种手绘风格画出上面的主题，保持线条质感、造型语言与整体配色一致；',
     '画面干净、构图清晰、不出现文字。也可以先帮我写成一段中英文生图提示词。',

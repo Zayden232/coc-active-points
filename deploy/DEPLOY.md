@@ -2650,32 +2650,61 @@ node tools/browser-page-check.mjs    # 28 PASS           页面级渲染巡检
 
 ```text
 入口      提示词卡片下方「风格提示词库 · 261 种手绘风格」
-弹层      主题(可选) + 搜索(编号/作者/风格名/特征) + A–G 分类页签(带条数) + 风格列表
-每条      编号 / 风格名 / 参考作者·分类 / 核心视觉特征 / 「填入提示词」/「复制画风」
+弹层      一个搜索框(编号/作者/风格名/特征) + A–G 分类页签(短名 + 条数) + 风格列表
+分类名    A 极简线描·冷幽默 / B 墨线淡彩·绘本叙事 / C 几何平面·负空间人物 / D 日系日常·手绘线稿 /
+          E 水墨国风·东方幻想 / F 网感涂鸦·单线孔版 / G 治愈绘本·质感拼贴  (字母降级成角标)
+每条      参考图缩略图(点开看大图) + 编号 / 风格名 / 参考作者·分类 / 核心视觉特征 +
+          「填入提示词」/「复制画风」
 填入      已有主体描述就追加(不覆盖), 同画风不重复堆叠, 截断到 textarea 上限 1000 字,
           并标记 promptSource='manual'(东方幻境不再要求重新整理)
-复制      编号 + 风格名 + 参考作者 + 核心特征 + 主题 + 使用说明 + 英文风格名 → 剪贴板
+复制      编号 + 风格名 + 参考作者 + 核心特征 + 主题占位行 + 使用说明 + 英文风格名 → 剪贴板
+          反馈写在弹层里(顶部提示「✓ 风格 001 已复制到剪贴板…」+ 按钮变「已复制 ✓」)
 性能      列表分批渲染(首批 30 条 + 「继续显示」), 避免原生 App 一次渲染 261 个卡片
 ```
+
+**参考图**（`app/src/static/style-thumbs/`）：
+
+```text
+来源      https://github.com/yang0/handraw-style 的 images/individual/**
+生成      node tools/build-handraw-thumbs.mjs <上游仓库目录>      # 320px webp, 261 张约 4 MB
+进仓库?   不进 —— 该目录在 .gitignore 里(第三方插画, 与纯文字数据性质不同); 页面在缺图时自动隐藏缩略图
+201–216   上游这几张是从 E 类总览图按错误网格切的(带表头/上一行画面), 脚本改成从总览图按内容重切
+```
+
+**这一版修掉的三个问题（用户反馈）**：
+
+1. **「点了复制没有任何反应」** —— 复制其实成功了，但 `uni.showToast` 的 `z-index` 是 **999**，
+   而弹层是 **1000**，提示被整个挡住（真浏览器实测 `elementFromPoint` 命中的是列表项而不是 toast）。
+   改为弹层内反馈：顶部一行绿色提示 + 那条的按钮变「已复制 ✓」（4 秒复原）。
+2. **「主题下面的搜索框不能输入」** —— 根因不是搜索框，而是 **uni-app 的 `input` 必须给显式高度**：
+   组件内部那个真 `<input>` 是 `height: 100%`，父级高度 `auto` 时被算成 **0 高**（实测 `innerHeight=0`），
+   于是"框看着在、点进去打不了字"。补 `height: 88rpx` 后真键盘输入正常。
+   同时按反馈**把两个输入框合成一个**（去掉主题那栏），并且**不再在同一个 input 上同时挂 `v-model` 与 `@input`**
+   （App 端这两者会打架），改用 `watch(styleKeyword)` 重置分页。
+3. **分类名与参考图** —— 分类名改成"该类两个最有代表性的子风格"提炼出的中文关键词（字母降级成角标），
+   列表每条加了参考图缩略图 + 点开大图。
 
 **验证**：
 
 ```bash
-node tools/handraw-library-flow.mjs     # 123 PASS / 0 FAIL  数据完整性 + 过滤/文案 + 页面接线
-node tools/handraw-library-ui-check.mjs # 31 PASS / 0 FAIL   真浏览器+真点击(含把剪贴板读回来核对文案)
-node tools/check-app-bundle.mjs         # 43 项               产物断言(风格库相关 10 项)
+node tools/handraw-library-flow.mjs     # 174 PASS / 0 FAIL  数据完整性 + 过滤/文案 + 页面接线
+node tools/handraw-library-ui-check.mjs # 42 PASS / 0 FAIL   真浏览器: 真点击 + 真键盘输入 + 读回剪贴板
+node tools/check-app-bundle.mjs         # 55 项               产物断言(风格库相关 22 项)
 node tools/workshop-oriental-flow.mjs   # 32 PASS             东方幻境未被破坏
 ```
 
-`tools/cdp-run.mjs` 这次修了两个通用问题，以后的 UI 检查都会受益：
+`tools/cdp-run.mjs` 修了两个通用问题，以后的 UI 检查都会受益：
 
 1. **横向 `scroll-view` 里的元素要先 `scrollIntoView` 再点** —— 否则元素在视口外，
    算出来的坐标会大于视口宽度（实测 G 类页签在 x=463 而视口只有 430），点击直接落空；
 2. **给页面授予剪贴板读写权限**（`Browser.grantPermissions`）—— 否则 `navigator.clipboard.readText()`
-   会以"权限被拒"失败，"复制"类功能就只能靠页面自己弹的提示语来判断成败了。
+   会以"权限被拒"失败，"复制"类功能就只能靠页面自己弹的提示语来判断成败了；
+3. 新增 `{insertText:{selector,text}}` 步骤做**真键盘输入**（先点元素拿焦点，再用 `Input.insertText`）
+   —— 只改 `value` 再 `dispatchEvent` 测不出"打不进字"这类问题（这次就是它抓到了 input 0 高度）。
 
 > 只内嵌文字这一点是有意的：上游的 261 张参考图（拼图 + 单图）合计 200 MB 以上，
 > App 里放不下，也没必要 —— 风格名 + 核心特征是这套提示词真正有用的部分。
+> 参考图另走 `tools/build-handraw-thumbs.mjs` 压成 320px webp（约 4 MB，不进仓库）。
 
 ---
 

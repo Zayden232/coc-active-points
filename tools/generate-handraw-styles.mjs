@@ -17,14 +17,58 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..');
 
 // 分类体系（与上游 README 的 A–G 一致，并与 styles.json 的 group 前缀逐一核对）
+// name  = 上游/README 的分类全名（搜索用）
+// short = 页面上的分类名：取该类最有代表性的两个子风格，各提炼成一个中文关键词
 const GROUPS = [
-  { id: 'A', name: '国际社论漫画 / 幽默手绘', from: 1, to: 35 },
-  { id: 'B', name: '国际绘本 / 叙事型手绘', from: 36, to: 54 },
-  { id: 'C', name: '现代平面 / 艺术化人物体系', from: 55, to: 82 },
-  { id: 'D', name: '日本作者 / 当代插画体系', from: 83, to: 123 },
-  { id: 'E', name: '中国作者 / 当代插画体系', from: 124, to: 154 },
-  { id: 'F', name: '通用网感 / 媒介 / 地域手绘', from: 155, to: 200 },
-  { id: 'G', name: '附件新增 / 当代插画补充', from: 201, to: 261 },
+  {
+    id: 'A',
+    name: '国际社论漫画 / 幽默手绘',
+    short: '极简线描·冷幽默',
+    from: 1,
+    to: 35,
+  },
+  {
+    id: 'B',
+    name: '国际绘本 / 叙事型手绘',
+    short: '墨线淡彩·绘本叙事',
+    from: 36,
+    to: 54,
+  },
+  {
+    id: 'C',
+    name: '现代平面 / 艺术化人物体系',
+    short: '几何平面·负空间人物',
+    from: 55,
+    to: 82,
+  },
+  {
+    id: 'D',
+    name: '日本作者 / 当代插画体系',
+    short: '日系日常·手绘线稿',
+    from: 83,
+    to: 123,
+  },
+  {
+    id: 'E',
+    name: '中国作者 / 当代插画体系',
+    short: '水墨国风·东方幻想',
+    from: 124,
+    to: 154,
+  },
+  {
+    id: 'F',
+    name: '通用网感 / 媒介 / 地域手绘',
+    short: '网感涂鸦·单线孔版',
+    from: 155,
+    to: 200,
+  },
+  {
+    id: 'G',
+    name: '附件新增 / 当代插画补充',
+    short: '治愈绘本·质感拼贴',
+    from: 201,
+    to: 261,
+  },
 ];
 
 const sourceDir = process.argv[2];
@@ -105,10 +149,12 @@ lines.push(`  author: ${quote('yang0')},`);
 lines.push('};');
 lines.push('');
 lines.push('// id + 名称 + 编号区间；count 由生成脚本核对');
+lines.push('// short = 页面上的分类名(该类两个代表子风格的中文关键词)，name = 上游分类全名');
 lines.push('export const HANDRAW_GROUPS = [');
 for (const g of counted) {
   lines.push('  {');
   lines.push(`    id: ${quote(g.id)},`);
+  lines.push(`    short: ${quote(g.short)},`);
   lines.push(`    name: ${quote(g.name)},`);
   lines.push(`    from: ${quote(String(g.from).padStart(3, '0'))},`);
   lines.push(`    to: ${quote(String(g.to).padStart(3, '0'))},`);

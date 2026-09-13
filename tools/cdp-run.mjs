@@ -20,6 +20,9 @@
 //   --jsAfterClick        --js 在点击之后执行(默认也是之后)
 //   --shot=<路径>         最后截图
 //   --keep               结束后不关浏览器(调试用)
+//
+// steps JSON 支持的步骤: {"click":选择器} {"clickText":文本,"pick":"first|last"}
+//   {"insertText":{"selector":选择器,"text":文本}}  {"js":表达式} {"wait":毫秒} {"shot":路径}
 // ============================================================
 import fs from 'node:fs';
 import path from 'node:path';
@@ -231,6 +234,20 @@ for (const step of steps) {
     results.push(item);
     console.log(`[cdp] clickText「${step.clickText}」${at ? `@ ${at.x},${at.y}` : '(没找到)'}`);
     await sleep(Number(step.after || 700));
+    continue;
+  }
+
+  if (step.insertText) {
+    // 真键盘输入: 先点一下元素拿到焦点, 再用 CDP 插入文本(会触发真实的 input 事件)。
+    // 光改 value 再 dispatchEvent 测不出"v-model + @input 打架导致打不进字"这类问题。
+    const target = step.insertText.selector;
+    const text = String(step.insertText.text == null ? '' : step.insertText.text);
+    const at = await clickSelector(target);
+    await sleep(120);
+    await send('Input.insertText', { text }, sessionId);
+    results.push({ kind: 'insertText', target, text, at, ok: !!at });
+    console.log(`[cdp] insertText「${text}」→ ${target}${at ? '' : '(元素不存在)'}`);
+    await sleep(Number(step.after || 600));
     continue;
   }
 
