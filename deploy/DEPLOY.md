@@ -867,9 +867,9 @@ bash /tmp/smoke-member-import.sh                                 # 生产冒烟(
 ```bash
 # 从设计稿文本精确抽取 <template>/<script>/<style> 组装成 .vue(避免手抄差异)
 node .tool/assemble-sfc.mjs --spec .tool/spec-member-import.json
-node .tool/sfc-check.mjs app/src/pages/member-import/member-import.vue      # 解析 + 模板/脚本/样式编译
-node .tool/vue-ctx-check.mjs app/src/pages/member-import/member-import.vue  # 模板引用标识符是否都有定义
-node .tool/md-check.mjs README.md deploy/DEPLOY.md                          # markdown 围栏配平
+node tools/sfc-check.mjs app/src/pages/member-import/member-import.vue      # 解析 + 模板/脚本/样式编译
+node tools/vue-ctx-check.mjs app/src/pages/member-import/member-import.vue  # 模板引用标识符是否都有定义
+node tools/md-check.mjs README.md deploy/DEPLOY.md                          # markdown 围栏配平
 ```
 
 ---
@@ -1388,16 +1388,16 @@ TypeError: Cannot read properties of null (reading 'in_tribe_after')
 
 ### 3. 怎么验证的（可复现）
 
-新增 `.tool/page-null-render.mjs`：用 SFC 编译器编译模板，从 `<script>` 里提取初始化为 `null` 的 data 字段，
+新增 `tools/page-null-render.mjs`：用 SFC 编译器编译模板，从 `<script>` 里提取初始化为 `null` 的 data 字段，
 在"数据未就绪"的状态下**真正调用一次渲染函数**：
 
 ```bash
 # 修复前：✗ Cannot read properties of null (reading 'counts')
 # 修复后：✓ ok
-node .tool/page-null-render.mjs app/src/pages/member-import/member-import.vue
+node tools/page-null-render.mjs app/src/pages/member-import/member-import.vue
 
 # 全站扫一遍(14 个页面全部 ✓)
-node .tool/page-null-render.mjs app/src/pages/*/*.vue
+node tools/page-null-render.mjs app/src/pages/*/*.vue
 ```
 
 > 打包构建、静态检查、后端 E2E 都发现不了这类问题——它们不执行"空状态"的渲染。**以后改模板请跑一次这个脚本。**
@@ -1682,19 +1682,19 @@ planEntries(plan, ruleId, note)   // -> [{rule_id, quantity, member_ids, note}]�
 
 ```bash
 # 1) 解析器 45 条断言: 线上真实 46 人名单 + 用户那份识图原文 + 边界(全角/空格/重复/多候选/忽略)
-node .tool/star-paste-check.mjs                  # 45 PASS / 0 FAIL
+node tools/star-paste-check.mjs                  # 45 PASS / 0 FAIL
 
 # 2) 录入页页面级流程 90 条: 真渲染(完整响应式) + 请求桩
 #    覆盖 解析->分组->提交体形状->保存后复位->指认/新建/忽略->面板渲染->普通录入路径不受影响
-node .tool/entry-paste-flow.mjs                  # 90 PASS / 0 FAIL
+node tools/entry-paste-flow.mjs                  # 90 PASS / 0 FAIL
 
 # 3) 真实 MySQL 端到端: 新增「粘贴星数名单」用例 20 条 + options 带 tag 3 条
 cd server && npm run test:e2e                    # 386 PASS / 0 FAIL
 
 # 4) 页面渲染自检 + 编译自检
-node .tool/page-null-render.mjs <14 个页面>       # 全部 ok
-node .tool/sfc-check.mjs app/src/pages/entry/entry.vue
-node .tool/vue-ctx-check.mjs app/src/pages/entry/entry.vue
+node tools/page-null-render.mjs <14 个页面>       # 全部 ok
+node tools/sfc-check.mjs app/src/pages/entry/entry.vue
+node tools/vue-ctx-check.mjs app/src/pages/entry/entry.vue
 
 # 5) H5 构建 + 产物文案核对(在 pages-entry-entry.<hash>.js 里)
 cd app && npm run build:h5
@@ -1783,7 +1783,7 @@ tar -xzf /var/backups/coc-points/h5-before-star-paste-<时间戳>.tgz -C /var/ww
 
 - 弹层拆成两个类：粘贴面板用 `.paste-layer`（850），选人弹层（含「指认」模式）用 `.member-picker-layer`（900）；
 - 桌面端居中的媒体查询两处都保留；
-- **这条约定已被断言锁住**：`.tool/entry-paste-flow.mjs` 里校验两个类的 `z-index` 数值、大小关系（都 < 999）、
+- **这条约定已被断言锁住**：`tools/entry-paste-flow.mjs` 里校验两个类的 `z-index` 数值、大小关系（都 < 999）、
   以及模板里两个类是否用对，改动错了会直接测试失败。
 
 **新增「快速切换」**（用户要求：既然做了名称近似匹配，就要能快速换）：
@@ -1848,7 +1848,7 @@ uni-modal / toast    z-index: 999   (assets/uni.*.css 里的 uni-modal / uni-toa
 - 抽屉底边正好贴在导航栏上沿 → 「完成选择 · N 人」/「应用分组 · N 人」完整可见 ✓
 - 代价（已知、可接受）：tabBar 那一小条不被抽屉遮住，理论上仍可点到（点别的 tab 会离开本页，回来时状态保留）。
 
-**断言同步补齐**（`.tool/entry-paste-flow.mjs`，页面级 106 → **110** 条）：
+**断言同步补齐**（`tools/entry-paste-flow.mjs`，页面级 106 → **110** 条）：
 两个弹层的 `z-index` 数值与大小关系、都必须 `bottom: var(--window-bottom`、抽屉 `max-height: min(900px, 100%)`、
 页脚不得再出现 `padding...safe-area-inset-bottom`、模板里类名用对。
 
@@ -1938,9 +1938,9 @@ bash /tmp/deploy-entry-bottom.sh        # 只备份 H5 → 覆盖 → 冒烟(不
 
 ```bash
 cd server && npm run test:e2e        # 413 PASS / 0 FAIL (386 → 413)
-node .tool/import-page-flow.mjs      # 21 PASS / 0 FAIL (新增)
-node .tool/entry-paste-flow.mjs      # 110 PASS / 0 FAIL (回归)
-node .tool/star-paste-check.mjs      # 59 PASS / 0 FAIL (回归)
+node tools/import-page-flow.mjs      # 21 PASS / 0 FAIL (新增)
+node tools/entry-paste-flow.mjs      # 110 PASS / 0 FAIL (回归)
+node tools/star-paste-check.mjs      # 59 PASS / 0 FAIL (回归)
 cd app && npm run build:h5
 ```
 
@@ -2160,7 +2160,7 @@ E2E                : 429 PASS / 0 FAIL (原 419 + 新增 10 条 CORS 断言)
   └ 跨域来源匿名 POST /api/members -> 仍 401(跨域不放宽鉴权)
 构建注入          : 默认 → 产物含 "/api"；VITE_API_BASE=https://app.jiacheng.cyou → 含 "https://app.jiacheng.cyou/api"；
                     用 app/.env 写 https://dev-check.example.com/ → 含 "https://dev-check.example.com/api"(补 /api + 去斜杠)；
-                    三种情况 __API_BASE__ 字面量残留均为 0 (见 .tool/check-api-base.mjs)
+                    三种情况 __API_BASE__ 字面量残留均为 0 (见 tools/check-api-base.mjs)
 本地库            : 导入生产快照后 members=56 行 / users=4 个账号 / 繁荣度最高 小羊(148, 大本营 18)
 本地全链路        : 后端直连 3000 → 46 人在册、按繁荣度降序(小羊 148 居首)；
                     http://127.0.0.1:5173/api/members 经 vite 代理 → 200 同样 46 人；
@@ -2489,11 +2489,11 @@ systemctl restart coc-points        # 无结构变更, 不需要动数据库
 本地已加两道护栏（都不需要浏览器/真机）：
 
 ```text
-node .tool/wheel-guest-flow.mjs     # 21 PASS  转盘页: 只读门禁删干净 + 访客真能抽 + 该拦的仍拦住
-node .tool/workshop-app-flow.mjs    # 61 PASS  工坊 App 适配层: 按 App 条件编译剥源码 + 内存文件系统跑通全流程
-node .tool/check-app-bundle.mjs     # 21 项     App 产物里该在的在、该没的没
-node .tool/check-block-usage.mjs    # 静态规则   <block> 必须带指令(裸 <block> 会被编译成 <template> 吞内容)
-node .tool/browser-page-check.mjs   # 28 PASS   headless Chrome 真渲染巡检 6 个页面(需要 5173 dev server 在跑)
+node tools/wheel-guest-flow.mjs     # 21 PASS  转盘页: 只读门禁删干净 + 访客真能抽 + 该拦的仍拦住
+node tools/workshop-app-flow.mjs    # 61 PASS  工坊 App 适配层: 按 App 条件编译剥源码 + 内存文件系统跑通全流程
+node tools/check-app-bundle.mjs     # 21 项     App 产物里该在的在、该没的没
+node tools/check-block-usage.mjs    # 静态规则   <block> 必须带指令(裸 <block> 会被编译成 <template> 吞内容)
+node tools/browser-page-check.mjs   # 28 PASS   headless Chrome 真渲染巡检 6 个页面(需要 5173 dev server 在跑)
 ```
 
 ### 12.9 事故：「每日奖励转盘不见了」——裸 `<block>` 被编译成 `<template>`（2026-09-13，纯前端）
@@ -2530,13 +2530,13 @@ node .tool/browser-page-check.mjs   # 28 PASS   headless Chrome 真渲染巡检 
 **新增护栏（都在本地，不需要真机）**：
 
 ```bash
-node .tool/check-block-usage.mjs    # 静态: <block> 必须带 v-if/v-else/v-else-if/v-for, 裸 <block> 直接 FAIL
-node .tool/browser-page-check.mjs   # 浏览器: 6 个页面断言 DOM 无 <template> + uni-view 数达标 + 关键文案可见
+node tools/check-block-usage.mjs    # 静态: <block> 必须带 v-if/v-else/v-else-if/v-for, 裸 <block> 直接 FAIL
+node tools/browser-page-check.mjs   # 浏览器: 6 个页面断言 DOM 无 <template> + uni-view 数达标 + 关键文案可见
 ```
 
 `browser-page-check.mjs` 依赖 HBuilderX 的 dev server（默认 `http://127.0.0.1:5173`，它带 `/api` 代理），
-换 URL 也可以：`node .tool/browser-page-check.mjs http://127.0.0.1:5173`。
-另外 `.tool/serve-dist.mjs <dir> <port>` 可以给 `uni build` 产物起个静态服务器，便于对构建产物截图核对。
+换 URL 也可以：`node tools/browser-page-check.mjs http://127.0.0.1:5173`。
+另外 `tools/serve-dist.mjs <dir> <port>` 可以给 `uni build` 产物起个静态服务器，便于对构建产物截图核对。
 
 **未改动线上**：按你的要求网页不动（线上仍是 09-13 之前的构建，非管理员在那里看不到转盘）。
 
@@ -2566,10 +2566,10 @@ node .tool/browser-page-check.mjs   # 浏览器: 6 个页面断言 DOM 无 <temp
 **验证**：
 
 ```bash
-node .tool/workshop-oriental-flow.mjs   # 32 PASS / 0 FAIL
+node tools/workshop-oriental-flow.mjs   # 32 PASS / 0 FAIL
 # 对照实验: 临时移除 promptSource 判断 -> 27 PASS / 5 FAIL（正是"开始生成"那几条）
-node .tool/check-app-bundle.mjs         # 25 项（新增默认服装/promptSource/onPromptEdited 进包）
-node .tool/browser-page-check.mjs       # 28 PASS（需要 5173 dev server）
+node tools/check-app-bundle.mjs         # 25 项（新增默认服装/promptSource/onPromptEdited 进包）
+node tools/browser-page-check.mjs       # 28 PASS（需要 5173 dev server）
 ```
 
 **部署状态**：纯前端，**未部署**（网页不维护）；App 重新打包即可带上。
@@ -2602,16 +2602,16 @@ methods    switchPickMode(切到自选时首次拉分数) / loadScores(可手动
 **验证**：
 
 ```bash
-node .tool/wheel-fun-pick-flow.mjs   # 77 PASS / 0 FAIL  逻辑(含"只从勾选名单里抽"的确定性验证)
-node .tool/wheel-fun-ui-check.mjs    # 18 PASS / 0 FAIL  真浏览器+真点击(CDP): 切标签/整组选中/清空/无横向溢出
-node .tool/check-app-bundle.mjs      # 31 项             产物断言
-node .tool/browser-page-check.mjs    # 28 PASS           页面级渲染巡检
+node tools/wheel-fun-pick-flow.mjs   # 77 PASS / 0 FAIL  逻辑(含"只从勾选名单里抽"的确定性验证)
+node tools/wheel-fun-ui-check.mjs    # 18 PASS / 0 FAIL  真浏览器+真点击(CDP): 切标签/整组选中/清空/无横向溢出
+node tools/check-app-bundle.mjs      # 31 项             产物断言
+node tools/browser-page-check.mjs    # 28 PASS           页面级渲染巡检
 ```
 
 `wheel-fun-pick-flow.mjs` 里最关键的一条：只勾并列第一那组里的两个人时，把 `Math.random` 固定成
 `0` / `0.999999`，抽中的**正好是这两个人**（而不是榜上排最前的小羊）—— 证明抽取被限制在勾选名单内。
 
-**新增通用工具** `.tool/cdp-run.mjs`：headless Chrome + CDP 驱动，支持按顺序执行
+**新增通用工具** `tools/cdp-run.mjs`：headless Chrome + CDP 驱动，支持按顺序执行
 `{click}/{clickText}/{js}/{shot}/{wait}` 步骤、读计算后的布局、输出 JSON 结果。
 `--steps=<json>` + `--out=<json>` 就能写成可断言的 UI 测试（`wheel-fun-ui-check.mjs` 就是这么用的）。
 注意里面的一个坑：**headless 的 `--window-size` 不等于页面 CSS 视口**（实测 `--window-size=430` 时

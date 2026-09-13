@@ -4,6 +4,23 @@
 
 线上示例：<https://app.jiacheng.cyou>
 
+一套代码两端可用：**H5 网页** 与 **原生 App**（uni-app / Vue3），App 打包产物直接指向后端接口，发给部落成员即可安装使用。
+
+---
+
+## 界面预览
+
+| 首页 | 录入积分 | 成员管理 | 排行榜 |
+|---|---|---|---|
+| <img src="img/index.jpg" width="180" alt="首页" /> | <img src="img/entry.jpg" width="180" alt="录入积分" /> | <img src="img/members.jpg" width="180" alt="成员管理" /> | <img src="img/ranking.jpg" width="180" alt="排行榜" /> |
+
+| 部落转盘 · 每日奖励 | 部落转盘 · 随机抽人（自选成员） | 部落创作工坊（AI 绘画） | 设置与备份 |
+|---|---|---|---|
+| <img src="img/wheel1.jpg" width="180" alt="每日奖励转盘" /> | <img src="img/wheel2.jpg" width="180" alt="随机抽人" /> | <img src="img/workshop.jpg" width="180" alt="创作工坊" /> | <img src="img/settings.jpg" width="180" alt="设置" /> |
+
+> 最后两张里的「随机抽人 · 按本周分数分组」是给**每周奖励只有 1 份、但经常多人同分**这种情况用的：
+> 同分的人自动归成一组，点分数那一行就能整组选中，再从中抽一个。
+
 ---
 
 ## 功能特性
@@ -345,7 +362,7 @@ npm test
 
 # 2) 真实 MySQL 端到端测试：自动起独立 MySQL 实例 → 建库 → 起真实后端 → 跑 HTTP 断言
 #    覆盖: 鉴权/限流/成员三态/规则/录入封顶/预览/幂等/撤销/粘贴星数分组录入(entries)/
-#          分项榜/结算/红包/导出/备份恢复/访客 403/转盘/识图导入(大本营·繁荣度·牌子变化)  共 419 条断言
+#          分项榜/结算/红包/导出/备份恢复/访客 403/转盘(含访客代抽)/永久删除/识图导入  共 452 条断言
 npm run test:e2e
 
 # 3) 官方 API 同步: E2E 会起一个本地"官方 API 桩服务"(scripts/coc-stub.mjs),
@@ -354,7 +371,7 @@ npm run test:e2e
 
 # 4) 前端页面"空数据渲染"检查(不需要浏览器): 用各页 data() 的初始值渲染模板,
 #    抓出"在 null 上取属性"这类只在浏览器控制台才暴露的渲染期异常
-node ../.tool/page-null-render.mjs ../app/src/pages/*/*.vue
+node ../tools/page-null-render.mjs ../app/src/pages/*/*.vue
 ```
 
 ### 前端逻辑的本地验证（不需要浏览器）
@@ -362,33 +379,61 @@ node ../.tool/page-null-render.mjs ../app/src/pages/*/*.vue
 ```bash
 # 5) 粘贴星数解析器: 用线上真实成员名单 + 用户那份识图原文跑 59 条断言
 #    (精确/繁体/错字/括号/0星/重复/多候选/全角数字/空格分隔/快速切换候选 等)
-node .tool/star-paste-check.mjs
+node tools/star-paste-check.mjs
 
 # 6) 录入页「粘贴星数名单」页面级流程: 编译 + 真渲染(完整响应式) + 请求桩, 共 110 条
 #    断言 解析→分组→提交体(entries+单批次号)→保存后复位→指认/新建/忽略/快速切换
 #         →面板渲染→弹层层级与底边(z-index/tabBar 让位)→普通录入不受影响
-node .tool/entry-paste-flow.mjs
+node tools/entry-paste-flow.mjs
 
 # 7) 批量导入页(识图格式)页面级流程: 共 21 条
 #    断言 预览分类→默认勾选→取消勾选后有效条数→apply 提交体→无变更时禁止导入
-node .tool/import-page-flow.mjs
+node tools/import-page-flow.mjs
 
 # 8) 打包产物的接口基址注入: 校验 VITE_API_BASE 是否按预期进了产物
-node .tool/check-api-base.mjs app/dist/build/h5 /api
+node tools/check-api-base.mjs app/dist/build/h5 /api
 
-# 9) 成员页「归档」筛选 + 归档成员可查看/可恢复: 62 + 18 条
+# 9) 成员页「归档」筛选 + 归档成员可查看/可恢复: 84 + 30 条
 #    断言 请求带 include_archived=1 / 归档成员留在列表 / 各筛选分流且并集覆盖全部成员 /
 #         「已归档」标签与日期渲染 / 不可重复归档 / 恢复按钮只对归档成员生效(提交体与提示文案) /
 #         管理员可见 新增·批量导入·批量管理, 访客只见"只读模式+管理员登录"
-node .tool/members-archive-flow.mjs
-node .tool/member-edit-archive-flow.mjs
+node tools/members-archive-flow.mjs
+node tools/member-edit-archive-flow.mjs
 
 # 10) 打包产物内容核对(该在的在、旧代码必须 0 处)
-node .tool/check-app-bundle.mjs app/dist/build/app
+node tools/check-app-bundle.mjs app/dist/build/app
 
 # 11) 运行中的 dev server 能否正常编译改动后的页面(需要 npm run dev:h5 在跑)
-node .tool/dev-server-page-check.mjs http://127.0.0.1:5173 /src/pages/members/members.vue
+node tools/dev-server-page-check.mjs http://localhost:5173 /src/pages/members/members.vue
+
+# 12) 模板静态规则: 不允许出现不带指令的裸 <block>
+#     (H5 编译器会把它编译成真实 <template>, 而 <template> 的子节点是惰性内容 → 整块不渲染)
+node tools/check-block-usage.mjs
+
+# 13) 创作工坊 App 适配层: 按 App 的条件编译剥一遍源码, 再用内存文件系统跑通
+#     取图 → 存本机 → 列表 → 上传 → 存相册 → 删除(重点验 uni.saveFile 的"移动"语义)  61 条
+node tools/workshop-app-flow.mjs
+
+# 14) 东方幻境: 不点「整理提示词」直接自己写也能生成 + 默认服装  32 条
+node tools/workshop-oriental-flow.mjs
+
+# 15) 转盘: 访客也能领每日奖励(只读门禁删干净)  21 条
+node tools/wheel-guest-flow.mjs
+
+# 16) 转盘随机抽人「自选成员」: 按本周分数分组 / 整组选中 / 只从勾选名单里抽  77 条
+node tools/wheel-fun-pick-flow.mjs
+
+# 17) 真浏览器巡检(需要 dev server 在跑; 断言 DOM 里没有真实 <template>、节点数达标、关键文案可见)  28 条
+node tools/browser-page-check.mjs http://localhost:5173
+
+# 18) 真浏览器 + 真点击: 切「随机抽人」→「自选成员」→ 点分数整组选中, 断言计数/按钮/无横向溢出  18 条
+node tools/wheel-fun-ui-check.mjs http://localhost:5173
 ```
+
+> 完整的工具清单与各自的依赖（要不要数据库/浏览器/dev server）见 **[tools/README.md](tools/README.md)**。
+
+> 发布前审计：`node tools/audit-for-publish.mjs` —— 只扫 **git 会提交的文件**，检查有没有密钥、口令、
+> 私钥、内网/公网 IP 混进仓库（结果只报位置，不打印值）。
 
 > `entry-paste-flow.mjs` 用 `createRenderer` 配一套极简节点操作真渲染页面（**不用 SSR**：
 > SSR 渲染后的实例 computed 不再失效重算，会让断言看到过期值）。它验证的是"页面胶水"：
@@ -505,14 +550,14 @@ mysql -uroot -p coc_points < server/migrations/00X_*.sql
   2. 单一人的组原来显示「第 21–21 名」，改成「第 21 名」；0 分组不再标「并列」；
   3. `.score-meta` 补 `min-width: 0`（flex 子项不收缩会把行顶宽）、`.score-pick` 补 `flex-shrink: 0`。
 - 验证：
-  - 新增 `.tool/wheel-fun-pick-flow.mjs` **77 PASS / 0 FAIL**，含
+  - 新增 `tools/wheel-fun-pick-flow.mjs` **77 PASS / 0 FAIL**，含
     「36 分 3 人并列被合成一组、名次区间 1–3」「整组选中/取消」「只勾并列里的两个人时把 `Math.random`
     固定为 0 / 0.999999，抽中的正是这两个人（而不是榜上排最前的小羊）」「抽取中改名单全部被忽略」
     「拿不到分数时退化 + 刷新后恢复分组」「刷新后陈旧勾选被丢弃」；
-  - 新增 `.tool/wheel-fun-ui-check.mjs` **18 PASS / 0 FAIL**：**真浏览器 + 真点击**（CDP）——
+  - 新增 `tools/wheel-fun-ui-check.mjs` **18 PASS / 0 FAIL**：**真浏览器 + 真点击**（CDP）——
     点「随机抽人」→「自选成员」→ 点第一组「整组选中」，断言 `已选 6 / 46 人`、按钮由灰转亮、
     点名台文案跟随变化、`清空` 后复位，以及**没有横向溢出**（`scrollWidth 430 ≤ 视口 430`）；
-  - 为它新增了通用工具 `.tool/cdp-run.mjs`（headless Chrome + CDP：真点击 / 读布局 / 截图 / 输出 JSON），
+  - 为它新增了通用工具 `tools/cdp-run.mjs`（headless Chrome + CDP：真点击 / 读布局 / 截图 / 输出 JSON），
     以后 UI 交互与布局问题不用再"临时改默认值截图"了；
   - `check-app-bundle.mjs` 扩到 **31 项**（新增自选入口/整组选中/分数分组说明/周榜接口/分组逻辑进包，
     旧文案残留 0）；`browser-page-check.mjs` 28、`check-block-usage.mjs`、既有 61 / 32 / 21 / 84 / 30 项与
@@ -536,7 +581,7 @@ mysql -uroot -p coc_points < server/migrations/00X_*.sql
      "实际发给模型的"不一致；
   2. **去掉末尾句号** —— 【角色细节】段是用「，」把 面部 / 服装 / 皮肤 拼起来的，带句号会拼出「。，」。
   实测 82 字（输入框与校验上限 140 字；整段提示词也在后端 1000 字上限内）。
-- 验证：新增 `.tool/workshop-oriental-flow.mjs` **32 PASS / 0 FAIL**；并做了**对照实验**——临时把修复代码
+- 验证：新增 `tools/workshop-oriental-flow.mjs` **32 PASS / 0 FAIL**；并做了**对照实验**——临时把修复代码
   去掉后，同一个测试 **27 PASS / 5 FAIL**（失败的正是「开始生成」那几条），确认这个测试真能抓到这个 bug。
   `check-app-bundle.mjs` 扩到 **25 项**（新增默认服装 / `promptSource` / `onPromptEdited` 进包，旧文案残留 0）；
   `browser-page-check.mjs` 28 项、`check-block-usage.mjs`、既有 84 / 61 / 30 / 21 项与 14 页渲染全部通过。
@@ -556,13 +601,13 @@ mysql -uroot -p coc_points < server/migrations/00X_*.sql
 - **修复**：删掉那层裸 `<block>`（`wheel.vue`），daily 区块恢复成和旧版一样的一层 `<block v-if>`；
   顺带把被我改乱的缩进还原。
 - **新增两道护栏（这次的教训都固化下来了）**：
-  - `.tool/check-block-usage.mjs`：静态规则——**`<block>` 必须带 `v-if/v-else/v-else-if/v-for`**，
+  - `tools/check-block-usage.mjs`：静态规则——**`<block>` 必须带 `v-if/v-else/v-else-if/v-for`**，
     裸 `<block>` 直接 FAIL（已用"注入一个裸 `<block>`"验证过它能抓到）。当前 21 处全部合规。
-  - `.tool/browser-page-check.mjs`：**真浏览器巡检**（headless Chrome + `--dump-dom`）6 个关键页面，
+  - `tools/browser-page-check.mjs`：**真浏览器巡检**（headless Chrome + `--dump-dom`）6 个关键页面，
     断言①渲染出的 DOM 里**不允许出现真实 `<template>` 元素**、②`uni-view` 节点数不低于阈值
     （内容被整块吞掉时会骤降）、③关键文案必须看得见。当前 **28 PASS / 0 FAIL**。
     它需要 HBuilderX 的 dev server（5173，带 `/api` 代理）在跑。
-- 另有 `.tool/serve-dist.mjs`（极简静态服务器，用于给构建产物截图）与 `.tool/ai-generation-check.mjs`
+- 另有 `tools/serve-dist.mjs`（极简静态服务器，用于给构建产物截图）与 `tools/ai-generation-check.mjs`
   （真生图端到端验证，可打本地或线上接口）。
 
 **访客可用「转盘每日奖励 + AI 绘画」，创作工坊进 App（2026-09-13，后端已部署生产）**
@@ -635,7 +680,7 @@ mysql -uroot -p coc_points < server/migrations/00X_*.sql
   「保存到相册」在安卓/iOS 各自的结果。
 - ⚠️ **本批引入过一个页面级 bug 并在同日修复**（裸 `<block>` → `<template>` 吞掉整块内容，导致
   「每日奖励转盘不见了」），详见上面最新一条「事故与修复」；结论：**改模板后必须跑
-  `.tool/browser-page-check.mjs`**，Node 渲染测试抓不到这类问题。
+  `tools/browser-page-check.mjs`**，Node 渲染测试抓不到这类问题。
 
 **归档成员可见性修复（2026-09-13，仅本地源码 / 未部署）**
 - **问题**：成员页「归档」掉的成员在软件里彻底消失，只能靠批量导入页输入昵称才能恢复；而
@@ -832,7 +877,7 @@ mysql -uroot -p coc_points < server/migrations/00X_*.sql
 **批次 4 后补充（2026-09-10）· 修复批量导入页渲染报错 + 新增前端渲染期自检**
 - **Bug**：成员批量导入页打开即报 `Cannot read properties of null (reading 'in_tribe_after')`。根因是第二步/第三步区块写成 `v-show="step === 2 && preview"`——**`v-show` 只切换显示，不阻止渲染**，`preview` 为 `null` 时里面的 `preview.counts` / `preview.in_tribe_after` 照样求值 → 渲染函数抛错（第一步的 `v-show="step === 1"` 保留，因为它不引用 `preview`，且能保留输入内容）
 - **修复**：两处改成 `v-if`，并加注释说明为什么必须用 `v-if`
-- **新增自检工具** `.tool/page-null-render.mjs`：用各页 `data()` 的初始值（null/未加载状态）真正调用编译后的渲染函数，抓这类异常。修复前它会复现该报错，修复后**全部 14 个页面通过**
+- **新增自检工具** `tools/page-null-render.mjs`：用各页 `data()` 的初始值（null/未加载状态）真正调用编译后的渲染函数，抓这类异常。修复前它会复现该报错，修复后**全部 14 个页面通过**
 - 详见 [`deploy/DEPLOY.md`](deploy/DEPLOY.md) 的「批量导入页渲染报错修复」一节
 
 **批次 4 后补充（2026-09-11）· 部落冲突官方 API 成员同步（只读预览 + 勾选应用）**
@@ -879,8 +924,8 @@ mysql -uroot -p coc_points < server/migrations/00X_*.sql
 - 预览新增提示「**N 人本周已录过这一项，本次分数会叠加（周上限内）**」（普通录入同样受益）
 - **同时修掉一个老 bug**：`GET /api/options` 只 `SELECT id, nickname, status`，**不返回 `tag`**
   → 选人弹层的「游戏标签」永远显示未设置、按标签搜索失效。现在补上 `tag`（公开只读接口，口径与 `/api/members` 一致）
-- 验证：解析器 45 条（`.tool/star-paste-check.mjs`，用**线上真实 46 人名单** + 用户提供的识图原文）+
-  页面级流程 90 条（`.tool/entry-paste-flow.mjs`，真渲染 + 请求桩）+
+- 验证：解析器 45 条（`tools/star-paste-check.mjs`，用**线上真实 46 人名单** + 用户提供的识图原文）+
+  页面级流程 90 条（`tools/entry-paste-flow.mjs`，真渲染 + 请求桩）+
   端到端断言 363 → **386**（粘贴星数 20 条 + options 带 tag 3 条）
 - **已于 2026-09-12 22:51 部署上线**（备份/冒烟/回滚见 [`deploy/DEPLOY.md`](deploy/DEPLOY.md) 的「录入页粘贴星数名单」一节）
 
@@ -910,7 +955,7 @@ mysql -uroot -p coc_points < server/migrations/00X_*.sql
   - 返回值增加 `status_changed` / `profile_changed`，预览增加 `status_change_detail`（绿→红 / 红→绿 各几人）
 - **展示改动**：成员管理列表、成员编辑页、录入页选人弹层、排行榜、首页前三的「游戏标签」位置统一换成「大本营 X · 繁荣 Y」（`tag` 字段仍在库里，官方 API 同步能力不受影响）
 - **排序**：成员列表默认按繁荣度降序（缺值最后，前端与 SQL 都按这个口径；旧数据全是空值时顺序与之前一致）
-- 验证：真实 MySQL E2E **386 → 419 PASS / 0 FAIL**（新增 33 条：格式解析、牌子变化/资料变化分类、勾选开关、red_since、繁荣度排序、大本营无上限与 0 报错、繁荣度无上限与负值报错、审计留痕）；页面级流程新增 `.tool/import-page-flow.mjs`（21 条：默认勾选、有效条数、apply 提交体、无变更禁导）
+- 验证：真实 MySQL E2E **386 → 419 PASS / 0 FAIL**（新增 33 条：格式解析、牌子变化/资料变化分类、勾选开关、red_since、繁荣度排序、大本营无上限与 0 报错、繁荣度无上限与负值报错、审计留痕）；页面级流程新增 `tools/import-page-flow.mjs`（21 条：默认勾选、有效条数、apply 提交体、无变更禁导）
 - **已于 2026-09-13 09:29 部署上线**（含迁移 008；部署时踩到"迁移文件在压缩包里、解包前就执行"的顺序错误，导致 `/api/members` 短暂 500，2 分钟内用 `.tool/fix-ocr-migration.sh` 补跑迁移恢复；回滚产物 `db/server/h5-before-ocr-2026-09-13-092915.*`）
 - **2026-09-13 09:51 修订上线**：删掉大本营等级 1-16 的上限（只要求不小于 1 的整数），列注释同步为「不设上限」；回滚产物 `db/server/h5-before-nocap-2026-09-13-095139.*`
 - **2026-09-13 09:58 修订上线**：删掉繁荣度上限（代码 `0-1000000` + 数据库 `SMALLINT` 65535），列放宽为 `INT UNSIGNED`（迁移 009，幂等）；回滚产物 `db/server/h5-before-prnocap-2026-09-13-095829.*`
@@ -930,4 +975,4 @@ mysql -uroot -p coc_points < server/migrations/00X_*.sql
 - 环境变量示例：[`server/.env.example`](server/.env.example)、[`app/.env.example`](app/.env.example)
 - 打包 App 发给别人：见上「打包 App 发给别人（不需要 CORS）」与 `deploy/DEPLOY.md` 第 12.6 节
 - 端到端测试：`server/scripts/e2e-run.mjs`（编排器）与 `server/scripts/e2e-cases.mjs`（419 条断言）
-- 前端逻辑验证：`.tool/star-paste-check.mjs`（解析器 59 条）、`.tool/entry-paste-flow.mjs`（录入页粘贴流程 110 条，含弹层层级与底边断言）、`.tool/import-page-flow.mjs`（批量导入页 21 条）、`.tool/page-null-render.mjs`（14 个页面空数据渲染）
+- 前端逻辑验证：`tools/star-paste-check.mjs`（解析器 59 条）、`tools/entry-paste-flow.mjs`（录入页粘贴流程 110 条，含弹层层级与底边断言）、`tools/import-page-flow.mjs`（批量导入页 21 条）、`tools/page-null-render.mjs`（14 个页面空数据渲染）
