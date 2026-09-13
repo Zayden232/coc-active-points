@@ -30,9 +30,9 @@ function buildPrompt(style) {
   const traits = stripTail(style.traits) || TRAITS_FALLBACK;
   const name = String(style.name || '').trim();
   const reference = String(style.reference || '').trim();
-  const stylePart = reference
-    ? `${name} 手绘插画风格（参考 ${reference}）`
-    : `${name} 手绘插画风格`;
+  // 201–216 的风格名本身就是中文"…插画风"，再加"手绘插画风格"会变成"插画风 手绘插画风格"
+  const styleName = /(风|风格)$/.test(name) ? name : `${name} 手绘插画风格`;
+  const stylePart = reference ? `${styleName}（参考 ${reference}）` : styleName;
   return `${SUBJECT_SLOT}，${stylePart}：${traits}。${SCENE}`;
 }
 
